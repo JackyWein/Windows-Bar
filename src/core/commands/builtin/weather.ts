@@ -82,7 +82,7 @@ function getDayName(dateStr: string): string {
 function buildForecastData(data: WttrResponse, city: string): DailyForecast[] {
   if (!data.weather) return [];
 
-  return data.weather.slice(0, 3).map((day) => ({
+  return data.weather.slice(0, 7).map((day) => ({
     date: day.date,
     dayName: getDayName(day.date),
     minTemp: day.mintempC,

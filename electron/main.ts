@@ -6,6 +6,8 @@ import { homedir } from 'os';
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
 import { tryGetIconWithRetry, iconCache } from './utils/icons';
 import { autoUpdater } from 'electron-updater';
+import { searchEverything, isEverythingRunning } from './indexers/everything';
+import { searchWithWindowsIndex } from './indexers/windowsSearch';
 
 // ========================
 // CUSTOM FAST INDEXER
@@ -724,12 +726,71 @@ app.on('window-all-closed', () => { });
 // IPC
 // ========================
 
+// Unified search handler - combines all search methods for comprehensive results
 ipcMain.handle('search-everything', async (_event, query: string) => {
   if (!query?.trim()) return [];
-  const top15 = searchIndex(query);
+
+  const startTime = Date.now();
+  const allResults: Map<string, IndexItem> = new Map(); // Use Map for deduplication by path
+
+  // 1. First, search the built-in index (fast, always available)
+  const localResults = searchIndex(query);
+  for (const item of localResults) {
+    allResults.set(item.path.toLowerCase(), item);
+  }
+
+  // 2. Try Everything search (if installed and running) - fastest comprehensive search
+  if (isEverythingRunning()) {
+    try {
+      const everythingResults = await searchEverything(query, 30);
+      for (const item of everythingResults) {
+        const key = item.path.toLowerCase();
+        if (!allResults.has(key)) {
+          allResults.set(key, item);
+        }
+      }
+      console.log(`[Unified Search] Everything found ${everythingResults.length} results`);
+    } catch (e) {
+      console.error('[Unified Search] Everything search failed:', e);
+    }
+  }
+
+  // 3. If Everything is not available, try Windows Search Indexer
+  if (!isEverythingRunning() && allResults.size < 15) {
+    try {
+      const windowsResults = await searchWithWindowsIndex(query, 20);
+      for (const item of windowsResults) {
+        const key = item.path.toLowerCase();
+        if (!allResults.has(key)) {
+          allResults.set(key, item);
+        }
+      }
+      console.log(`[Unified Search] Windows Search found ${windowsResults.length} results`);
+    } catch (e) {
+      console.error('[Unified Search] Windows Search failed:', e);
+    }
+  }
+
+  // Convert to array and sort by relevance
+  const results = Array.from(allResults.values());
+
+  // Sort: local index results first (they have better scoring), then by type
+  results.sort((a, b) => {
+    // Prioritize apps and games
+    const typePriority: Record<string, number> = { 'app': 0, 'game': 1, 'folder': 2, 'file': 3, 'system': 4 };
+    const aPriority = typePriority[a.type] ?? 5;
+    const bPriority = typePriority[b.type] ?? 5;
+
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.title.localeCompare(b.title);
+  });
+
+  const finalResults = results.slice(0, 30); // Return up to 30 results
+
+  console.log(`[Unified Search] Total: ${finalResults.length} results in ${Date.now() - startTime}ms`);
 
   // Return results with iconPath for lazy icon fetching
-  return top15.map(item => ({ ...item, iconBase64: null, iconPath: item.iconPath || item.path }));
+  return finalResults.map(item => ({ ...item, iconBase64: null, iconPath: item.iconPath || item.path }));
 });
 
 // Icon cache for lazy loading

@@ -708,62 +708,73 @@
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
 }
 
-/* Weather Day Tabs */
+/* Weather Day Tabs - Minimalist 7-day style */
 .weather-day-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   margin-bottom: 12px;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.weather-day-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .weather-day-tab {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 6px;
-  background: rgba(255, 255, 255, 0.03);
+  gap: 2px;
+  padding: 6px 4px;
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all var(--transition-speed) ease;
   font-family: inherit;
 }
 
 .weather-day-tab:hover {
-  background: rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.2);
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.15);
 }
 
 .weather-day-tab.active {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: rgba(56, 189, 248, 0.4);
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.3);
 }
 
 .weather-day-tab-icon {
   color: #38bdf8;
-  opacity: 0.8;
+  opacity: 0.7;
+  transform: scale(0.85);
 }
 
 .weather-day-tab.active .weather-day-tab-icon {
   opacity: 1;
+  transform: scale(0.9);
 }
 
 .weather-day-tab-name {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .weather-day-tab.active .weather-day-tab-name {
   color: var(--text);
+  font-weight: 600;
 }
 
 .weather-day-tab-temp {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 500;
   color: #38bdf8;
 }

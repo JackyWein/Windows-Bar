@@ -72,8 +72,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [expandWeb, setExpandWeb] = useState(false);
-  const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
-  const [folderItems, setFolderItems] = useState<SearchResult[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
+  const [folderItemsMap, setFolderItemsMap] = useState<Map<string, SearchResult[]>>(new Map());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const folderLoadingRef = useRef(false);
@@ -128,8 +128,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
 
   // Reset expansion on query change
   useEffect(() => {
-    setExpandedFolder(null);
-    setFolderItems([]);
+    setExpandedFolders([]);
+    setFolderItemsMap(new Map());
     setSelectedIndex(0);
     setFocusedZone(FOCUS_ZONE_INPUT);
   }, [query]);
@@ -484,8 +484,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         weatherIcon: h.weatherCode,
       }));
 
-      // Build 3-day forecast
-      const forecast = (data.weather || []).slice(0, 3).map((day: { date: string; mintempC: string; maxtempC: string; astronomy: { sunrise: string; sunset: string }[]; hourly: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }[]; lang_de?: { value: string }[]; weatherDesc?: { value: string }[] }) => ({
+      // Build 7-day forecast
+      const forecast = (data.weather || []).slice(0, 7).map((day: { date: string; mintempC: string; maxtempC: string; astronomy: { sunrise: string; sunset: string }[]; hourly: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }[]; lang_de?: { value: string }[]; weatherDesc?: { value: string }[] }) => ({
         date: day.date,
         dayName: getDayName(day.date),
         minTemp: day.mintempC,
@@ -527,26 +527,43 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     }
   }
 
+  // Track which folders are currently loading
+  const loadingFoldersRef = useRef<Set<string>>(new Set());
+
   // Execute action on a result
   function executeAction(result: SearchResult) {
     if (!result) return;
 
-    // Folder expansion on Enter
-    if (result.type === 'folder' && result.path && !result.isSubItem) {
-      if (expandedFolder === result.path) {
-        setExpandedFolder(null);
-        setFolderItems([]);
+    // Folder expansion on Enter - works for any folder (main or sub-item)
+    if (result.type === 'folder' && result.path) {
+      const isExpanded = expandedFolders.includes(result.path);
+
+      if (isExpanded) {
+        // Collapse this folder and all its children
+        setExpandedFolders(prev => prev.filter(p => !p.startsWith(result.path!)));
+        setFolderItemsMap(prev => {
+          const newMap = new Map(prev);
+          // Remove this folder and all sub-folders
+          for (const key of newMap.keys()) {
+            if (key.startsWith(result.path!)) {
+              newMap.delete(key);
+            }
+          }
+          return newMap;
+        });
       } else {
-        setExpandedFolder(result.path);
-        setFolderItems([]);
-        folderLoadingRef.current = true;
+        // Expand this folder
+        setExpandedFolders(prev => [...prev, result.path!]);
+        loadingFoldersRef.current.add(result.path!);
 
         const currentPath = result.path;
+        const depth = result.folderDepth || 0;
+
         const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
         Promise.race([window.electronAPI.listDirectory(result.path), timeoutPromise])
           .then((raw: Record<string, unknown>[]) => {
             const items = (raw || []).map((item: Record<string, unknown>, idx: number) => ({
-              id: `sub-${idx}-${item.path}`,
+              id: `sub-${depth}-${idx}-${item.path}`,
               title: String(item.title ?? ''),
               subtitle: item.path ? String(item.path) : undefined,
               type: (item.type as SearchResult['type']) ?? 'file',
@@ -554,14 +571,14 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
               iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined,
               iconPath: item.iconPath ? String(item.iconPath) : undefined,
               isSubItem: true,
+              folderDepth: depth + 1,
             }));
 
-            setExpandedFolder(prev => {
-              if (prev === currentPath) {
-                setFolderItems(items);
-                folderLoadingRef.current = false;
-              }
-              return prev;
+            loadingFoldersRef.current.delete(currentPath);
+            setFolderItemsMap(prev => {
+              const newMap = new Map(prev);
+              newMap.set(currentPath, items);
+              return newMap;
             });
 
             // Lazy-load icons for folder sub-items (apps and folders)
@@ -569,14 +586,28 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
             for (const item of iconCandidates) {
               window.electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
                 if (icon) {
-                  setFolderItems(prev => prev.map(r =>
-                    r.id === item.id ? { ...r, iconBase64: icon } : r
-                  ));
+                  setFolderItemsMap(prev => {
+                    const newMap = new Map(prev);
+                    const folderItems = newMap.get(currentPath);
+                    if (folderItems) {
+                      newMap.set(currentPath, folderItems.map(r =>
+                        r.id === item.id ? { ...r, iconBase64: icon } : r
+                      ));
+                    }
+                    return newMap;
+                  });
                 }
               }).catch(() => { /* ignore */ });
             }
           })
-          .catch(() => { folderLoadingRef.current = false; setFolderItems([]); });
+          .catch(() => {
+            loadingFoldersRef.current.delete(currentPath);
+            setFolderItemsMap(prev => {
+              const newMap = new Map(prev);
+              newMap.set(currentPath, []);
+              return newMap;
+            });
+          });
       }
       return;
     }
@@ -730,7 +761,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   const displayResults = useMemo(() => {
     if (query.startsWith('/g ')) return results;
 
-    // Check if this is a help/command browser view (don't limit results)
+    // check if this is a help/command browser view (don't limit results)
     const isHelpView = results.some(r => r.isHelpCategory || r.id.startsWith('help-cmd-'));
 
     const localAndPriority = results.filter(r => r.type !== 'web' || !r.isWeb || r.id === 'web-inline');
@@ -738,18 +769,60 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
 
     let out: SearchResult[] = [...localAndPriority];
 
-    // Inject folder items
-    if (expandedFolder) {
-      const parentIdx = out.findIndex(r => r.path === expandedFolder);
+    // Helper function to recursively inject folder items
+    function injectFolderItems(out: SearchResult[], folderPath: string, depth: number): void {
+      // Find this folder in the results
+      const parentIdx = out.findIndex(r => r.path === folderPath);
       if (parentIdx !== -1) {
-        if (folderItems.length > 0) {
-          out.splice(parentIdx + 1, 0, ...folderItems);
-        } else if (folderLoadingRef.current) {
-          out.splice(parentIdx + 1, 0, { id: 'loading-folder', title: 'Lade Ordnerinhalt...', subtitle: 'Bitte warten...', type: 'file', isSubItem: true });
+        // get folder contents
+        const folderContents = folderItemsMap.get(folderPath);
+        const isLoading = loadingFoldersRef.current.has(folderPath);
+
+        // inject sub-items with proper indentation
+        const subItems: SearchResult[] = [];
+        if (folderContents && folderContents.length > 0) {
+          for (const item of folderContents) {
+            subItems.push({
+              ...item,
+              isSubItem: true,
+              folderDepth: depth + 1,
+            });
+          }
+        } else if (isLoading) {
+          subItems.push({
+            id: `loading-${folderPath}`,
+            title: 'Lade Ordnerinhalt...',
+            subtitle: 'Bitte warten...',
+            type: 'file',
+            isSubItem: true,
+            folderDepth: depth + 1,
+          });
         } else {
-          out.splice(parentIdx + 1, 0, { id: 'empty-folder', title: '(Leerer Ordner oder Zugriff verweigert)', subtitle: 'Keine anzeigbaren Dateien gefunden', type: 'file', isSubItem: true });
+          subItems.push({
+            id: `empty-${folderPath}`,
+            title: '(Leerer Ordner oder Zugriff verweigert)',
+            subtitle: 'Keine anzeigbaren Dateien gefunden',
+            type: 'file',
+            isSubItem: true,
+            folderDepth: depth + 1,
+          });
+        }
+
+        // insert sub-items after the parent
+        out.splice(parentIdx + 1, 0, ...subItems);
+
+        // recursively inject sub-folder contents
+        for (const subItem of subItems) {
+          if (subItem.type === 'folder' && expandedFolders.includes(subItem.path!)) {
+            injectFolderItems(out, subItem.path!, (depth + 1));
+          }
         }
       }
+    }
+
+    // inject folder items for all expanded folders
+    for (const folderPath of expandedFolders) {
+      injectFolderItems(out, folderPath, 0);
     }
 
     if (expandWeb) {
@@ -774,7 +847,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     }
 
     return out.slice(0, settings.search.maxResults);
-  }, [results, expandWeb, query, expandedFolder, folderItems, settings.search.maxResults]);
+  }, [results, expandWeb, query, expandedFolders, folderItemsMap, settings.search.maxResults]);
 
   const quickActions = getQuickActions();
 
@@ -1068,7 +1141,7 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
             >
               <span className="weather-day-tab-icon">{getWeatherIcon(parseInt(day.weatherIcon))}</span>
               <span className="weather-day-tab-name">{day.dayName}</span>
-              <span className="weather-day-tab-temp">{day.maxTemp}°</span>
+              <span className="weather-day-tab-temp">{day.minTemp}°/{day.maxTemp}°</span>
             </button>
           ))}
         </div>

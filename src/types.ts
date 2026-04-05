@@ -19,6 +19,7 @@ export interface SearchResult {
   isHelpCategory?: boolean;
   helpCommands?: string;
   copyToClipboard?: string;
+  folderDepth?: number;
 }
 
 export type ViewMode = 'search' | 'ai' | 'settings';
