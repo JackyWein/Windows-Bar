@@ -708,6 +708,70 @@
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
 }
 
+/* Weather Day Tabs */
+.weather-day-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+}
+
+.weather-day-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  font-family: inherit;
+}
+
+.weather-day-tab:hover {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.weather-day-tab.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.weather-day-tab-icon {
+  color: #38bdf8;
+  opacity: 0.8;
+}
+
+.weather-day-tab.active .weather-day-tab-icon {
+  opacity: 1;
+}
+
+.weather-day-tab-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.weather-day-tab.active .weather-day-tab-name {
+  color: var(--text);
+}
+
+.weather-day-tab-temp {
+  font-size: 13px;
+  font-weight: 500;
+  color: #38bdf8;
+}
+
+.weather-day-tab.active .weather-day-tab-temp {
+  font-weight: 600;
+}
+
 .weather-header {
   display: flex;
   align-items: center;
@@ -969,6 +1033,19 @@
   transition: all calc(var(--transition-speed) * 2) ease;
   position: absolute;
   bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 18px;
+}
+
+.weather-precip-chance {
+  font-size: 8px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  padding-bottom: 2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
 }
 
 .weather-precip-fill.rain {
@@ -997,32 +1074,18 @@
   justify-content: space-between;
   margin-top: 4px;
   padding: 0 2px;
+  gap: 2px;
 }
 
 .weather-precip-time {
   flex: 1;
   text-align: center;
-  font-size: 8px;
+  font-size: 9px;
   color: var(--text-dim);
+  min-width: 0;
 }
 
 .weather-precip-time.highlight {
   color: #38bdf8;
   font-weight: 600;
 }
-
-.weather-precip-chance {
-  font-size: 7px;
-  color: var(--text-dim);
-  position: absolute;
-  bottom: -14px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-}
-
-.weather-precip-chance.highlight {
-  color: #38bdf8;
-  font-weight: 600;
-}
-

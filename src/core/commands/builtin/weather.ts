@@ -8,6 +8,18 @@ interface HourlyData {
   weatherIcon: string;
 }
 
+interface DailyForecast {
+  date: string;
+  dayName: string;
+  minTemp: string;
+  maxTemp: string;
+  weatherIcon: string;
+  weatherDesc: string;
+  sunrise?: string;
+  sunset?: string;
+  hourly: HourlyData[];
+}
+
 interface WttrCurrent {
   temp_C: string;
   FeelsLikeC: string;
@@ -37,10 +49,14 @@ interface WttrHourly {
 }
 
 interface WttrWeatherDay {
+  date: string;
   mintempC: string;
   maxtempC: string;
   astronomy: WttrAstronomy[];
   hourly: WttrHourly[];
+  lang_de?: { value: string }[];
+  weatherDesc?: { value: string }[];
+  weatherCode?: string;
 }
 
 interface WttrResponse {
@@ -48,12 +64,49 @@ interface WttrResponse {
   weather?: WttrWeatherDay[];
 }
 
+// Helper to get day name from date string
+function getDayName(dateStr: string): string {
+  const date = new Date(dateStr);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  if (date.toDateString() === today.toDateString()) return 'Heute';
+  if (date.toDateString() === tomorrow.toDateString()) return 'Morgen';
+
+  const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  return days[date.getDay()];
+}
+
+// Helper to build forecast data from wttr response
+function buildForecastData(data: WttrResponse, city: string): DailyForecast[] {
+  if (!data.weather) return [];
+
+  return data.weather.slice(0, 3).map((day) => ({
+    date: day.date,
+    dayName: getDayName(day.date),
+    minTemp: day.mintempC,
+    maxTemp: day.maxtempC,
+    weatherIcon: day.hourly?.[4]?.weatherCode || day.weatherCode || '116', // Use midday weather
+    weatherDesc: day.lang_de?.[0]?.value || day.weatherDesc?.[0]?.value || '',
+    sunrise: day.astronomy?.[0]?.sunrise,
+    sunset: day.astronomy?.[0]?.sunset,
+    hourly: (day.hourly || []).map((h: WttrHourly) => ({
+      time: h.time,
+      temp: parseInt(h.tempC),
+      feelsLike: parseInt(h.FeelsLikeC),
+      chanceOfRain: h.chanceofrain,
+      weatherIcon: h.weatherCode,
+    })),
+  }));
+}
+
 const weatherCommands: readonly Command[] = [
   {
     id: 'wetter',
     trigger: '/wetter',
     description: 'Wetter abrufen',
-    category: 'web',
+    category: 'weather',
     requiresSetting: 'features.weatherEnabled',
     async handler(args: string, ctx) {
       const city = args.trim() || ctx.settings.search.defaultCity;
@@ -77,6 +130,10 @@ const weatherCommands: readonly Command[] = [
         }));
 
         const weatherDesc = current.lang_de?.[0]?.value || current.weatherDesc?.[0]?.value || 'Unbekannt';
+
+        // Build 3-day forecast
+        const forecast = buildForecastData(data, city);
+
         const weatherData = {
           temp: current.temp_C,
           feelsLike: current.FeelsLikeC,
@@ -95,6 +152,7 @@ const weatherCommands: readonly Command[] = [
           sunrise: today?.astronomy?.[0]?.sunrise,
           sunset: today?.astronomy?.[0]?.sunset,
           hourly: hourlyData,
+          forecast,
         };
 
         const wttrUrl = `https://wttr.in/${encodeURIComponent(city)}?lang=de`;
@@ -139,6 +197,10 @@ const weatherCommands: readonly Command[] = [
         }));
 
         const weatherDesc = current.lang_de?.[0]?.value || current.weatherDesc?.[0]?.value || 'Unbekannt';
+
+        // Build 3-day forecast
+        const forecast = buildForecastData(data, city);
+
         const weatherData = {
           temp: current.temp_C,
           feelsLike: current.FeelsLikeC,
@@ -157,6 +219,7 @@ const weatherCommands: readonly Command[] = [
           sunrise: today?.astronomy?.[0]?.sunrise,
           sunset: today?.astronomy?.[0]?.sunset,
           hourly: hourlyData,
+          forecast,
         };
 
         const wttrUrl = `https://wttr.in/${encodeURIComponent(city)}?lang=de`;

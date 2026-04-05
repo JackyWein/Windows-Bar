@@ -18,8 +18,8 @@ const notesCommands: readonly Command[] = [
   {
     id: 'note',
     trigger: '/note ',
-    description: 'Notiz speichern',
-    usage: 'z.B. /note Milch kaufen  •  /note TODO: Projekt abschließen',
+    description: 'Schnellnotiz speichern',
+    usage: 'z.B. /note Einkaufen: Milch, Brot',
     category: 'notes',
     requiresSetting: 'features.notesEnabled',
     handler(args: string) {
@@ -47,12 +47,12 @@ const notesCommands: readonly Command[] = [
       if (notes.length === 0) {
         return { results: [{ id: 'cmd-notes', title: 'Keine Notizen', subtitle: '/note Text um eine zu erstellen', type: 'system' }] };
       }
-      const results = notes.slice(0, 10).map((n, i) => ({
+      const results = notes.slice(0, 10).map((note, i) => ({
         id: `note-${i}`,
-        title: n.text.substring(0, 50),
-        subtitle: new Date(n.created).toLocaleString('de-DE'),
-        type: 'file' as const,
-        path: n.text,
+        title: note.text.length > 50 ? note.text.substring(0, 50) + '...' : note.text,
+        subtitle: new Date(note.created).toLocaleString('de-DE'),
+        type: 'system' as const,
+        path: note.text,
       }));
       return { results };
     },

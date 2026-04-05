@@ -2,6 +2,8 @@
 // Shared Types
 // ========================
 
+import type { AISettings } from "./core/ai/types";
+
 export interface SearchResult {
   id: string;
   title: string;
@@ -169,19 +171,7 @@ export interface AppSettings {
   plugins: {
     enabled: Record<string, boolean>;
   };
-  ai: {
-    defaultProvider: string | null;
-    defaultModel: string | null;
-    setupComplete: boolean;
-    providers: Record<string, {
-      enabled: boolean;
-      apiKey?: string;
-      name?: string;
-      endpoint?: string;
-      models?: Array<{ id: string; name: string; description?: string }>;
-      cliCommand?: string;
-    }>;
-  };
+  ai: AISettings;
 }
 
 export const defaultSettings: AppSettings = {

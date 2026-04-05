@@ -1,9 +1,11 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, screen, powerSaveBlocker, safeStorage } from 'electron';
 import { join } from 'path';
-import { promises as fs } from 'fs';
+import { promises as fs, watch as fsWatch } from 'fs';
+import type { FSWatcher } from 'fs';
 import { homedir } from 'os';
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
 import { tryGetIconWithRetry, iconCache } from './utils/icons';
+import { autoUpdater } from 'electron-updater';
 
 // ========================
 // CUSTOM FAST INDEXER
@@ -62,6 +64,160 @@ async function buildIndex() {
   });
 
   console.log(`[WindowsBar] Index ready: ${indexItems.length} items in ${Date.now() - start}ms`);
+}
+
+// ========================
+// FILE SYSTEM WATCHER - Real-time index updates
+// ========================
+const activeWatchers: FSWatcher[] = [];
+let debounceTimer: NodeJS.Timeout | null = null;
+const DEBOUNCE_MS = 2000; // Wait 2 seconds before re-indexing
+
+// Folders to watch for changes (high-priority user folders)
+function getWatchPaths(): string[] {
+  const paths: string[] = [];
+
+  // User folders
+  const userFolderNames: (Parameters<typeof app.getPath>[0])[] = ['desktop', 'downloads', 'documents'];
+  for (const pf of userFolderNames) {
+    try {
+      paths.push(app.getPath(pf));
+    } catch (e) { }
+  }
+
+  // Start Menu
+  paths.push(
+    join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft\\Windows\\Start Menu\\Programs'),
+    join(homedir(), 'AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs')
+  );
+
+  return paths.filter(p => {
+    try {
+      require('fs').existsSync(p);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Debounced re-index for a specific path
+async function reindexPath(changedPath: string) {
+  console.log(`[WindowsBar] Re-indexing changed path: ${changedPath}`);
+
+  // Remove old items from this path
+  const changedPathLower = changedPath.toLowerCase();
+  indexItems = indexItems.filter(item => !item.path.toLowerCase().startsWith(changedPathLower));
+
+  // Determine type based on path
+  let defaultType: 'app' | 'file' = 'file';
+  let priority = 5;
+
+  if (changedPath.toLowerCase().includes('start menu')) {
+    defaultType = 'app';
+    priority = 0;
+  } else if (changedPath.toLowerCase().includes('desktop')) {
+    defaultType = 'file';
+    priority = 2;
+  } else if (changedPath.toLowerCase().includes('downloads')) {
+    defaultType = 'file';
+    priority = 2;
+  }
+
+  // Re-crawl the path
+  try {
+    await crawl(changedPath, defaultType, priority, 3);
+  } catch (e) {
+    console.error(`[WindowsBar] Error re-indexing ${changedPath}:`, e);
+  }
+}
+
+// Handle file system events with debouncing
+function handleFSEvent(eventType: string, filename: string | null, watchPath: string) {
+  if (!filename) return;
+
+  // Skip temporary and hidden files
+  if (filename.startsWith('~') || filename.startsWith('.') || filename.endsWith('.tmp')) return;
+
+  // Clear existing timer
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+  }
+
+  // Set new timer
+  debounceTimer = setTimeout(() => {
+    console.log(`[WindowsBar] FS change detected: ${eventType} on ${filename} in ${watchPath}`);
+    reindexPath(watchPath).catch(e => console.error('[WindowsBar] Re-index error:', e));
+    debounceTimer = null;
+  }, DEBOUNCE_MS);
+}
+
+// Start watching critical folders
+function startWatchers() {
+  const watchPaths = getWatchPaths();
+  console.log('[WindowsBar] Starting file watchers for:', watchPaths);
+
+  for (const path of watchPaths) {
+    try {
+      const watcher = fsWatch(
+        path,
+        { recursive: true, persistent: false },
+        (eventType, filename) => handleFSEvent(eventType, filename, path)
+      );
+
+      watcher.on('error', (error) => {
+        console.error(`[WindowsBar] Watcher error for ${path}:`, error);
+      });
+
+      activeWatchers.push(watcher);
+      console.log(`[WindowsBar] Watching: ${path}`);
+    } catch (e) {
+      console.error(`[WindowsBar] Failed to watch ${path}:`, e);
+    }
+  }
+}
+
+// Stop all watchers
+function stopWatchers() {
+  for (const watcher of activeWatchers) {
+    watcher.close();
+  }
+  activeWatchers.length = 0;
+  console.log('[WindowsBar] All file watchers stopped');
+}
+
+// Periodic background refresh (every 5 minutes) as fallback
+let backgroundRefreshInterval: NodeJS.Timeout | null = null;
+
+function startBackgroundRefresh() {
+  backgroundRefreshInterval = setInterval(async () => {
+    console.log('[WindowsBar] Background refresh triggered');
+    try {
+      // Quick re-scan of user folders only
+      await scanUserFolders();
+      await scanStartMenu();
+
+      // Deduplicate
+      const seen = new Map<string, boolean>();
+      indexItems = indexItems.filter(item => {
+        const key = item.path.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.set(key, true);
+        return true;
+      });
+
+      console.log(`[WindowsBar] Background refresh complete: ${indexItems.length} items`);
+    } catch (e) {
+      console.error('[WindowsBar] Background refresh error:', e);
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+}
+
+function stopBackgroundRefresh() {
+  if (backgroundRefreshInterval) {
+    clearInterval(backgroundRefreshInterval);
+    backgroundRefreshInterval = null;
+  }
 }
 
 function injectSystemTools() {
@@ -437,6 +593,57 @@ function searchIndex(query: string): IndexItem[] {
 }
 
 // ========================
+// AUTO UPDATER - Silent Background Updates
+// ========================
+
+// Configure auto-updater
+autoUpdater.autoDownload = true;        // Automatically download updates
+autoUpdater.autoInstallOnAppQuit = true; // Install on app quit (no user interaction)
+autoUpdater.allowPrerelease = false;     // Only stable releases
+
+// Check for updates silently (no user notification)
+async function checkForUpdates() {
+  if (isDev) {
+    console.log('[WindowsBar] Skipping update check in dev mode');
+    return;
+  }
+
+  try {
+    console.log('[WindowsBar] Checking for updates...');
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    console.error('[WindowsBar] Update check failed:', error);
+  }
+}
+
+// Auto-updater event handlers (silent - no UI notifications)
+autoUpdater.on('checking-for-update', () => {
+  console.log('[WindowsBar] Checking for update...');
+});
+
+autoUpdater.on('update-available', (info) => {
+  console.log('[WindowsBar] Update available:', info.version);
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('[WindowsBar] No update available. Current version:', app.getVersion());
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  const percent = Math.round(progressObj.percent);
+  console.log(`[WindowsBar] Downloading update: ${percent}% (${progressObj.transferred}/${progressObj.total} bytes)`);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('[WindowsBar] Update downloaded:', info.version);
+  console.log('[WindowsBar] Update will be installed on next app restart');
+});
+
+autoUpdater.on('error', (error) => {
+  console.error('[WindowsBar] Auto-updater error:', error);
+});
+
+// ========================
 // Window Management
 // ========================
 let mainWindow: BrowserWindow | null = null;
@@ -489,14 +696,28 @@ function toggleWindow() {
 
 app.whenReady().then(() => {
   createWindow();
-  buildIndex(); // Index after app is ready to use app.getPath
+  buildIndex().then(() => {
+    // Start file watchers after initial index is built
+    startWatchers();
+    startBackgroundRefresh();
+  });
   const success = globalShortcut.register('Alt+Space', toggleWindow);
   console.log(success ? '[WindowsBar] Alt+Space registered' : '[WindowsBar] Shortcut FAILED');
   app.setLoginItemSettings({ openAtLogin: true, path: app.getPath('exe') });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+  // Check for updates on startup (silent background update)
+  checkForUpdates();
+
+  // Also check for updates periodically every 4 hours
+  setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  stopWatchers();
+  stopBackgroundRefresh();
+});
 app.on('window-all-closed', () => { });
 
 // ========================
@@ -658,7 +879,7 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
       return [{ title: '(Nur versteckte/Systemdateien gefunden)', path: dirPath, type: 'file', iconBase64: null }];
     }
 
-    // Return immediately with types only (no custom icons for speed)
+    // Return with iconPath for lazy loading icons in frontend
     return visibleResults.slice(0, 30).map(entry => {
       const name = entry.name;
       const fullPath = join(dirPath, name);
@@ -666,11 +887,70 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
       const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
       if (type === 'file' && APP_EXTS.has(ext)) type = 'app';
 
+      // Determine iconPath for lazy loading
+      let iconPath: string | undefined;
+      if (type === 'folder') {
+        // Folders can have icons too (from folder.ico or the folder itself)
+        iconPath = fullPath;
+      } else if (type === 'app') {
+        // For apps, try to resolve shortcut targets for better icons
+        if (name.toLowerCase().endsWith('.lnk')) {
+          try {
+            const sh = shell.readShortcutLink(fullPath);
+            iconPath = sh.icon || sh.target || fullPath;
+          } catch {
+            iconPath = fullPath;
+          }
+        } else if (name.toLowerCase().endsWith('.url')) {
+          // Parse .url file to extract IconFile
+          try {
+            const content = require('fs').readFileSync(fullPath, 'utf-8');
+            const iconMatch = content.match(/IconFile=(.+)/i);
+            if (iconMatch?.[1]) {
+              let extractedPath = iconMatch[1].trim().replace(/^["']|["']$/g, '');
+              if (!extractedPath.match(/^[A-Za-z]:\\/)) {
+                const urlDir = fullPath.substring(0, fullPath.lastIndexOf('\\'));
+                const absPath = join(urlDir, extractedPath);
+                try {
+                  if (require('fs').existsSync(absPath)) {
+                    extractedPath = absPath;
+                  }
+                } catch (e) { }
+              }
+              iconPath = extractedPath;
+            }
+            // If no IconFile, check for Steam URL
+            if (!iconPath) {
+              const urlMatch = content.match(/URL=(.+)/i);
+              if (urlMatch?.[1]) {
+                const url = urlMatch[1].trim();
+                const steamMatch = url.match(/steam:\/\/rungameid\/(\d+)/i);
+                if (steamMatch) {
+                  const steamPath = getSteamPath();
+                  if (steamPath) {
+                    iconPath = join(steamPath, 'steam', 'games', `${steamMatch[1]}.ico`);
+                  }
+                }
+              }
+            }
+          } catch {
+            iconPath = fullPath;
+          }
+        } else {
+          // For .exe and other apps, use the file itself
+          iconPath = fullPath;
+        }
+      } else {
+        // Regular files - use the file itself for icon extraction
+        iconPath = fullPath;
+      }
+
       return {
         title: name,
         path: fullPath,
         type,
-        iconBase64: null // Frontend uses generic type icons
+        iconBase64: null,
+        iconPath: iconPath || fullPath
       };
     });
   } catch (e) {
@@ -1136,8 +1416,8 @@ ipcMain.handle('ai:chat', async (event, request: {
 
       // Handle SSE streaming
       if (contentType.includes('text/event-stream') || request.body &&
-          typeof request.body === 'object' && 'stream' in request.body &&
-          (request.body as Record<string, unknown>).stream === true) {
+        typeof request.body === 'object' && 'stream' in request.body &&
+        (request.body as Record<string, unknown>).stream === true) {
 
         const reader = response.body?.getReader();
         if (!reader) throw new Error('No response body');

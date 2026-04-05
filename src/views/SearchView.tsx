@@ -139,7 +139,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     settings,
     query,
     showResults: (newResults: SearchResult[]) => setResults(newResults),
-    navigate: () => {}, // placeholder, can be extended
+    navigate: () => { }, // placeholder, can be extended
     api: window.electronAPI,
   }), [settings, query]);
 
@@ -265,19 +265,20 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         power: { label: 'Power-User', type: 'system' },
       };
 
-      // Filter commands by search term (reuse allCmds from above)
-      const filtered = filter
+      // Filter commands: by search term AND by setting availability
+      const filtered = (filter
         ? allCmds.filter(c => {
-            const trigger = typeof c.trigger === 'string' ? c.trigger : '';
-            return (
-              trigger.toLowerCase().includes(filter) ||
-              c.id.toLowerCase().includes(filter) ||
-              c.description.toLowerCase().includes(filter) ||
-              c.category.toLowerCase().includes(filter) ||
-              (c.aliases && c.aliases.some(a => a.toLowerCase().includes(filter)))
-            );
-          })
-        : allCmds;
+          const trigger = typeof c.trigger === 'string' ? c.trigger : '';
+          return (
+            trigger.toLowerCase().includes(filter) ||
+            c.id.toLowerCase().includes(filter) ||
+            c.description.toLowerCase().includes(filter) ||
+            c.category.toLowerCase().includes(filter) ||
+            (c.aliases && c.aliases.some(a => a.toLowerCase().includes(filter)))
+          );
+        })
+        : allCmds
+      ).filter(c => isCommandAvailable(c.requiresSetting));
 
       // Group by category, preserving order
       const categoryOrder = ['calc', 'text', 'web', 'weather', 'notes', 'clipboard', 'system', 'power'];
@@ -386,8 +387,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         setResults(mappedLocal);
         setLoading(false);
 
-        // Lazy-load icons for app/game results
-        const iconCandidates = mappedLocal.filter(r => (r.type === 'app' || r.type === 'game') && r.iconPath);
+        // Lazy-load icons for app/game/folder results
+        const iconCandidates = mappedLocal.filter(r => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
         for (const item of iconCandidates) {
           window.electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
             if (icon) {
@@ -447,6 +448,20 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     }
   }, [focusedZone]);
 
+  // Helper to get day name from date string
+  function getDayName(dateStr: string): string {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Heute';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Morgen';
+
+    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+    return days[date.getDay()];
+  }
+
   // Weather fetcher (still used for natural language weather queries)
   async function fetchWeather(city: string) {
     try {
@@ -469,6 +484,25 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         weatherIcon: h.weatherCode,
       }));
 
+      // Build 3-day forecast
+      const forecast = (data.weather || []).slice(0, 3).map((day: { date: string; mintempC: string; maxtempC: string; astronomy: { sunrise: string; sunset: string }[]; hourly: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }[]; lang_de?: { value: string }[]; weatherDesc?: { value: string }[] }) => ({
+        date: day.date,
+        dayName: getDayName(day.date),
+        minTemp: day.mintempC,
+        maxTemp: day.maxtempC,
+        weatherIcon: day.hourly?.[4]?.weatherCode || '116',
+        weatherDesc: day.lang_de?.[0]?.value || day.weatherDesc?.[0]?.value || '',
+        sunrise: day.astronomy?.[0]?.sunrise,
+        sunset: day.astronomy?.[0]?.sunset,
+        hourly: (day.hourly || []).map((h: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }) => ({
+          time: h.time,
+          temp: parseInt(h.tempC),
+          feelsLike: parseInt(h.FeelsLikeC),
+          chanceOfRain: h.chanceofrain,
+          weatherIcon: h.weatherCode,
+        })),
+      }));
+
       const weatherData = {
         temp: current.temp_C, feelsLike: current.FeelsLikeC,
         humidity: current.humidity, windSpeed: current.windspeedKmph,
@@ -481,6 +515,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         sunrise: today?.astronomy?.[0]?.sunrise,
         sunset: today?.astronomy?.[0]?.sunset,
         hourly: hourlyData,
+        forecast,
       };
 
       setResults([
@@ -510,21 +545,36 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
         Promise.race([window.electronAPI.listDirectory(result.path), timeoutPromise])
           .then((raw: Record<string, unknown>[]) => {
+            const items = (raw || []).map((item: Record<string, unknown>, idx: number) => ({
+              id: `sub-${idx}-${item.path}`,
+              title: String(item.title ?? ''),
+              subtitle: item.path ? String(item.path) : undefined,
+              type: (item.type as SearchResult['type']) ?? 'file',
+              path: item.path ? String(item.path) : undefined,
+              iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined,
+              iconPath: item.iconPath ? String(item.iconPath) : undefined,
+              isSubItem: true,
+            }));
+
             setExpandedFolder(prev => {
               if (prev === currentPath) {
-                setFolderItems((raw || []).map((item: Record<string, unknown>, idx: number) => ({
-                  id: `sub-${idx}-${item.path}`,
-                  title: String(item.title ?? ''),
-                  subtitle: item.path ? String(item.path) : undefined,
-                  type: (item.type as SearchResult['type']) ?? 'file',
-                  path: item.path ? String(item.path) : undefined,
-                  iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined,
-                  isSubItem: true,
-                })));
+                setFolderItems(items);
                 folderLoadingRef.current = false;
               }
               return prev;
             });
+
+            // Lazy-load icons for folder sub-items (apps and folders)
+            const iconCandidates = items.filter(r => (r.type === 'app' || r.type === 'folder') && r.iconPath);
+            for (const item of iconCandidates) {
+              window.electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
+                if (icon) {
+                  setFolderItems(prev => prev.map(r =>
+                    r.id === item.id ? { ...r, iconBase64: icon } : r
+                  ));
+                }
+              }).catch(() => { /* ignore */ });
+            }
           })
           .catch(() => { folderLoadingRef.current = false; setFolderItems([]); });
       }
@@ -680,6 +730,9 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   const displayResults = useMemo(() => {
     if (query.startsWith('/g ')) return results;
 
+    // Check if this is a help/command browser view (don't limit results)
+    const isHelpView = results.some(r => r.isHelpCategory || r.id.startsWith('help-cmd-'));
+
     const localAndPriority = results.filter(r => r.type !== 'web' || !r.isWeb || r.id === 'web-inline');
     const webClutter = results.filter(r => r.type === 'web' && r.isWeb && r.id !== 'web-inline');
 
@@ -714,6 +767,12 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         });
       }
     }
+
+    // Don't limit results for help view - show all commands
+    if (isHelpView) {
+      return out;
+    }
+
     return out.slice(0, settings.search.maxResults);
   }, [results, expandWeb, query, expandedFolder, folderItems, settings.search.maxResults]);
 
@@ -890,15 +949,80 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   );
 }
 
+// Helper function to format time from wttr.in format (e.g., "0", "100", "200" -> "00:00", "01:00", "02:00")
+function formatTime(timeStr: string): string {
+  const t = timeStr.padStart(4, '0'); // "0" -> "0000", "100" -> "0100"
+  const hours = t.substring(0, 2);
+  return `${hours}:00`;
+}
+
+// Weather icon mapping based on wttr.in weather codes
+function getWeatherIcon(code: number): React.ReactNode {
+  if (code === 113) return <Sun size={20} />; // Sunny
+  if (code === 116) return <CloudSun size={20} />; // Partly cloudy
+  if (code === 119 || code === 122) return <Cloud size={20} />; // Cloudy
+  if (code >= 176 && code <= 200) return <CloudDrizzle size={20} />; // Light rain
+  if (code >= 263 && code <= 266) return <CloudDrizzle size={20} />; // Drizzle
+  if (code >= 293 && code <= 302) return <CloudRain size={20} />; // Rain
+  if (code >= 308 && code <= 314) return <CloudHail size={20} />; // Heavy rain
+  if (code >= 317 && code <= 338) return <Snowflake size={20} />; // Snow
+  if (code >= 350 && code <= 377) return <CloudHail size={20} />; // Ice/Hail
+  if (code >= 386 && code <= 395) return <CloudRain size={20} />; // Thunderstorm
+  return <CloudSun size={20} />;
+}
+
 // Weather card sub-component
 function WeatherCard({ data, selected, onClick, onMouseEnter }: {
-  data: { hourly?: { time: string; temp: number; chanceOfRain: string; weatherIcon: string }[]; temp: string; feelsLike: string; humidity: string; windSpeed: string; windDir: string; uvIndex: string; visibility: string; pressure: string; cloudCover: string; weatherDesc: string; city: string; minTemp: string; maxTemp: string; sunrise?: string; sunset?: string };
+  data: {
+    hourly?: { time: string; temp: number; chanceOfRain: string; weatherIcon: string }[];
+    temp: string;
+    feelsLike: string;
+    humidity: string;
+    windSpeed: string;
+    windDir: string;
+    uvIndex: string;
+    visibility: string;
+    pressure: string;
+    cloudCover: string;
+    weatherDesc: string;
+    city: string;
+    minTemp: string;
+    maxTemp: string;
+    sunrise?: string;
+    sunset?: string;
+    forecast?: {
+      date: string;
+      dayName: string;
+      minTemp: string;
+      maxTemp: string;
+      weatherIcon: string;
+      weatherDesc: string;
+      sunrise?: string;
+      sunset?: string;
+      hourly: { time: string; temp: number; chanceOfRain: string; weatherIcon: string }[];
+    }[];
+  };
   selected: boolean;
   onClick: () => void;
   onMouseEnter: () => void;
 }) {
-  const hourlyData = data.hourly || [];
-  const graphHours = hourlyData.slice(0, 24);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const forecast = data.forecast || [];
+
+  // Get data for selected day
+  const selectedDay = forecast[selectedDayIndex];
+  const isToday = selectedDayIndex === 0;
+
+  // Use hourly data from selected day, or fallback to today's data
+  const hourlyData = selectedDay?.hourly || data.hourly || [];
+  const displayMinTemp = selectedDay?.minTemp || data.minTemp;
+  const displayMaxTemp = selectedDay?.maxTemp || data.maxTemp;
+  const displayWeatherDesc = selectedDay?.weatherDesc || data.weatherDesc;
+  const displaySunrise = selectedDay?.sunrise || data.sunrise;
+  const displaySunset = selectedDay?.sunset || data.sunset;
+  // wttr.in returns 3-hour intervals by default (0, 3, 6, 9, 12, 15, 18, 21)
+  // Use all available hourly data points for better resolution
+  const graphHours = hourlyData.slice(0, 8);
   const temps = graphHours.map((h) => h.temp);
   const minTemp = Math.min(...temps) - 2;
   const maxTemp = Math.max(...temps) + 2;
@@ -930,15 +1054,40 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
 
   return (
     <div className={`weather-card ${selected ? 'selected' : ''}`} onClick={onClick} onMouseEnter={onMouseEnter}>
+      {/* Day selector tabs */}
+      {forecast.length > 1 && (
+        <div className="weather-day-tabs">
+          {forecast.map((day, idx) => (
+            <button
+              key={day.date}
+              className={`weather-day-tab ${idx === selectedDayIndex ? 'active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedDayIndex(idx);
+              }}
+            >
+              <span className="weather-day-tab-icon">{getWeatherIcon(parseInt(day.weatherIcon))}</span>
+              <span className="weather-day-tab-name">{day.dayName}</span>
+              <span className="weather-day-tab-temp">{day.maxTemp}°</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="weather-header">
-        <div className="weather-icon-main"><CloudSun size={32} /></div>
+        <div className="weather-icon-main">
+          {isToday ? <CloudSun size={32} /> : getWeatherIcon(parseInt(selectedDay?.weatherIcon || '116'))}
+        </div>
         <div className="weather-temp">
-          <span className="temp-value">{data.temp}°C</span>
+          <span className="temp-value">{isToday ? data.temp : selectedDay?.maxTemp || data.temp}°C</span>
           <span className="temp-city">{data.city}</span>
         </div>
       </div>
-      <div className="weather-desc">{data.weatherDesc}</div>
-      <div className="weather-range">Gefühlt {data.feelsLike}°C | {data.minTemp}° bis {data.maxTemp}°C</div>
+      <div className="weather-desc">{isToday ? data.weatherDesc : displayWeatherDesc}</div>
+      <div className="weather-range">
+        {isToday ? `Gefühlt ${data.feelsLike}°C | ` : ''}
+        {displayMinTemp}° bis {displayMaxTemp}°C
+      </div>
 
       {graphHours.length > 1 && (
         <div className="weather-graph-container">
@@ -964,7 +1113,7 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
           <div className="weather-graph-labels">
             {points.map((p, i) => (
               <span key={i} className="weather-graph-label">
-                {parseInt(p.time) ? `${parseInt(p.time)}:00` : p.time}
+                {formatTime(p.time)}
               </span>
             ))}
           </div>
@@ -985,7 +1134,8 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
             )}
           </div>
           <div className="weather-precip-bar">
-            {hourlyData.slice(0, 24).map((h, i) => {
+            {/* Use all 3-hour interval data from wttr.in */}
+            {hourlyData.slice(0, 8).map((h, i) => {
               const p = isPrecip(h);
               const barHeight = p.hasPrecip ? Math.max(p.chance, 15) : Math.max(p.chance, 5);
               const precipType = p.isSnow ? 'snow' : p.isHail ? 'hail' : (p.isSleet || p.isFreezing) ? 'sleet' : 'rain';
@@ -998,19 +1148,19 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
                   {p.hasPrecip && (
                     <div className={`weather-precip-icon ${iconClass}`}><PrecipIcon size={10} /></div>
                   )}
-                  <div className={`weather-precip-fill ${precipType}`} style={{ height: `${barHeight}%` }} />
+                  <div className={`weather-precip-fill ${precipType}`} style={{ height: `${barHeight}%` }}>
+                    <span className="weather-precip-chance">{h.chanceOfRain}%</span>
+                  </div>
                 </div>
               );
             })}
           </div>
           <div className="weather-precip-time-labels">
-            {hourlyData.slice(0, 24).map((h, i) => {
+            {/* Time labels for 3-hour intervals from wttr.in */}
+            {hourlyData.slice(0, 8).map((h, i) => {
               const p = isPrecip(h);
               const time = h.time || '';
-              if (i % 3 === 0) {
-                return <span key={i} className={`weather-precip-time ${p.hasPrecip ? 'highlight' : ''}`} style={{ flex: 3 }}>{parseInt(time) ? `${parseInt(time)}:00` : time}</span>;
-              }
-              return <span key={i} className="weather-precip-time" style={{ flex: 1 }} />;
+              return <span key={i} className={`weather-precip-time ${p.hasPrecip ? 'highlight' : ''}`}>{formatTime(time)}</span>;
             })}
           </div>
         </div>

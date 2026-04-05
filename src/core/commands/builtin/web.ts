@@ -28,7 +28,7 @@ const webCommands: readonly Command[] = [
         const data = await r.json();
         const ip = data.ip;
         return {
-          results: [{ id: 'cmd-ip', title: ip, subtitle: 'Öffentliche IP \u2022 Enter zum Kopieren', type: 'system', path: ip }],
+          results: [{ id: 'cmd-ip', title: ip, subtitle: 'Öffentliche IP • Enter zum Kopieren', type: 'system', path: ip }],
           copyToClipboard: ip,
         };
       } catch {
@@ -66,21 +66,99 @@ const webCommands: readonly Command[] = [
   {
     id: 'tr',
     trigger: '/tr ',
-    description: 'Text übersetzen (DeepL)',
+    description: 'Text übersetzen',
+    usage: '/tr de:en Text zum Übersetzen',
     category: 'web',
-    handler(args: string) {
-      const match = args.trim().match(/^([a-z]{2}):([a-z]{2})\s+(.+)$/i);
+    async handler(args: string) {
+      const trimmed = args.trim();
+
+      // Show usage if no args
+      if (!trimmed) {
+        return { results: [{ id: 'cmd-usage', title: 'Text übersetzen', subtitle: '/tr de:en Text zum Übersetzen', type: 'calc' }] };
+      }
+
+      // Support both colon (:) and semicolon (;) as separators
+      const match = trimmed.match(/^([a-z]{2})[:;]([a-z]{2})\s+(.+)$/i);
       if (match) {
-        const from = match[1];
-        const to = match[2];
+        const from = match[1].toLowerCase();
+        const to = match[2].toLowerCase();
         const text = match[3];
         const preview = text.length > 25 ? text.substring(0, 25) + '...' : text;
-        const url = `https://www.deepl.com/translator#${from}/${to}/${encodeURIComponent(text)}`;
-        return {
-          results: [{ id: 'cmd-tr', title: `"${preview}" übersetzen`, subtitle: `${from.toUpperCase()} \u2192 ${to.toUpperCase()} via DeepL`, type: 'web', path: url, isWeb: true }],
-        };
+        const deeplUrl = `https://www.deepl.com/translator#${from}/${to}/${encodeURIComponent(text)}`;
+
+        // Try MyMemory Translation API (free, no API key needed)
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+
+          const response = await fetch(
+            `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timeout);
+
+          if (response.ok) {
+            const data = await response.json();
+
+            if (data.responseStatus === 200 && data.responseData?.translatedText) {
+              const translatedText = data.responseData.translatedText;
+
+              return {
+                results: [
+                  {
+                    id: 'cmd-tr-result',
+                    title: translatedText,
+                    subtitle: `${from.toUpperCase()} → ${to.toUpperCase()} • Enter zum Kopieren`,
+                    type: 'calc',
+                    copyToClipboard: translatedText,
+                  },
+                  {
+                    id: 'cmd-tr-deepl',
+                    title: 'In DeepL öffnen',
+                    subtitle: 'Alternative Übersetzung',
+                    type: 'web',
+                    path: deeplUrl,
+                  },
+                ],
+              };
+            }
+          }
+
+          // Fallback: Show DeepL option
+          return {
+            results: [
+              {
+                id: 'cmd-tr-translate',
+                title: `"${preview}" übersetzen`,
+                subtitle: `${from.toUpperCase()} → ${to.toUpperCase()} via DeepL`,
+                type: 'web',
+                path: deeplUrl,
+              },
+            ],
+          };
+        } catch {
+          // Fallback: Show DeepL option
+          return {
+            results: [
+              {
+                id: 'cmd-tr-translate',
+                title: `"${preview}" übersetzen`,
+                subtitle: `${from.toUpperCase()} → ${to.toUpperCase()} via DeepL`,
+                type: 'web',
+                path: deeplUrl,
+              },
+            ],
+          };
+        }
       }
-      return { results: [{ id: 'cmd-err', title: 'Ungültiges Format', subtitle: '/tr de:en Hallo Welt', type: 'system' }] };
+
+      // Check if user provided incomplete format (e.g., "de:en" or "de;en" without text)
+      const partialMatch = trimmed.match(/^([a-z]{2})[:;]([a-z]{2})$/i);
+      if (partialMatch) {
+        return { results: [{ id: 'cmd-usage', title: 'Text fehlt', subtitle: `/tr ${trimmed} <Text zum Übersetzen>`, type: 'calc' }] };
+      }
+
+      return { results: [{ id: 'cmd-err', title: 'Ungültiges Format', subtitle: 'Verwendung: /tr de:en Hallo Welt', type: 'system' }] };
     },
     enabled: true,
   },
