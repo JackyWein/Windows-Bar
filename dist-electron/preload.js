@@ -1,18 +1,1 @@
-let electron = require("electron");
-//#region electron/preload.ts
-electron.contextBridge.exposeInMainWorld("electronAPI", {
-	openAiChat: () => electron.ipcRenderer.send("open-ai-chat"),
-	openUrl: (url) => electron.ipcRenderer.send("open-url", url),
-	openFile: (path) => electron.ipcRenderer.send("open-file", path),
-	hideWindow: () => electron.ipcRenderer.send("hide-window"),
-	resizeWindow: (w, h) => electron.ipcRenderer.send("resize-window", w, h),
-	searchEverything: (query) => electron.ipcRenderer.invoke("search-everything", query),
-	fetchInstantAnswer: (query) => electron.ipcRenderer.invoke("fetch-instant-answer", query),
-	startTerminal: () => electron.ipcRenderer.send("start-terminal"),
-	stopTerminal: () => electron.ipcRenderer.send("stop-terminal"),
-	sendTerminalInput: (data) => electron.ipcRenderer.send("terminal-input", data),
-	onTerminalOutput: (callback) => {
-		electron.ipcRenderer.on("terminal-output", (_event, data) => callback(data));
-	}
-});
-//#endregion
+let e=require(`electron`);e.contextBridge.exposeInMainWorld(`electronAPI`,{openAiChat:()=>e.ipcRenderer.send(`open-ai-chat`),openUrl:t=>e.ipcRenderer.send(`open-url`,t),openFile:t=>e.ipcRenderer.send(`open-file`,t),hideWindow:()=>e.ipcRenderer.send(`hide-window`),resizeWindow:(t,n)=>e.ipcRenderer.send(`resize-window`,t,n),searchEverything:t=>e.ipcRenderer.invoke(`search-everything`,t),fetchInstantAnswer:t=>e.ipcRenderer.invoke(`fetch-instant-answer`,t),startTerminal:()=>e.ipcRenderer.send(`start-terminal`),stopTerminal:()=>e.ipcRenderer.send(`stop-terminal`),sendTerminalInput:t=>e.ipcRenderer.send(`terminal-input`,t),onTerminalOutput:t=>{e.ipcRenderer.on(`terminal-output`,(e,n)=>t(n))},listDirectory:t=>e.ipcRenderer.invoke(`list-directory`,t),getFileIcon:t=>e.ipcRenderer.invoke(`get-file-icon`,t),getSystemInfo:()=>e.ipcRenderer.invoke(`get-system-info`),sleepDisplay:()=>e.ipcRenderer.send(`sleep-display`),setVolume:t=>e.ipcRenderer.send(`set-volume`,t),toggleMute:()=>e.ipcRenderer.send(`toggle-mute`),emptyTrash:()=>e.ipcRenderer.send(`empty-trash`),takeScreenshot:()=>e.ipcRenderer.send(`take-screenshot`),onScreenshotResult:t=>{e.ipcRenderer.on(`screenshot-result`,(e,n)=>t(n))},killProcess:t=>e.ipcRenderer.invoke(`kill-process`,t),listProcesses:()=>e.ipcRenderer.invoke(`list-processes`),readClipboard:()=>e.ipcRenderer.invoke(`read-clipboard`),writeClipboard:t=>e.ipcRenderer.send(`write-clipboard`,t)});
