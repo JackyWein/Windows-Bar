@@ -1,5 +1,8 @@
 <div align="center">
 
+
+<img src="resources/icon.png" alt="Windows Bar" width="64">
+    
 # Windows Bar
 
 **A premium productivity launcher for Windows.**
@@ -11,8 +14,6 @@ Blazing-fast app search, multi-provider AI chat, 40+ built-in commands, and deep
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)]()
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite)]()
 [![License](https://img.shields.io/badge/License-MIT-green)]()
-
-<img src="resources/icon.png" alt="Windows Bar" width="64">
 
 </div>
 
