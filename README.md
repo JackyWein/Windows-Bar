@@ -12,7 +12,7 @@ Blazing-fast app search, multi-provider AI chat, 40+ built-in commands, and deep
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite)]()
 [![License](https://img.shields.io/badge/License-MIT-green)]()
 
-![Windows Bar](resources/icon.png)
+<img src="resources/icon.png" alt="Windows Bar" width="64">
 
 </div>
 
