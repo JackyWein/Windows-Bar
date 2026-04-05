@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, File, AppWindow, Gamepad2, Bot, Globe, Calculator, ArrowLeft, ExternalLink, Settings, TerminalSquare, Send, CloudRain, Folder, FileText, Monitor, Power, RotateCcw, Lock, Moon, Sun, HardDrive, Music, Video, Image, Archive, Code, FileSpreadsheet, Presentation, Trash2, Clock, Clipboard, Cpu, Hash, Key, QrCode, Smile, Globe2, Calendar, Binary, FileCode, Link2, StickyNote, Wind, Droplets, Eye, Cloud, Thermometer, Sunrise, Sunset, Gauge, CloudSun } from 'lucide-react';
+import { Search, File, AppWindow, Gamepad2, Bot, Globe, Calculator, ArrowLeft, ExternalLink, Settings, TerminalSquare, Send, CloudRain, Folder, FileText, Monitor, Power, RotateCcw, Lock, Moon, Sun, HardDrive, Music, Video, Image, Archive, Code, FileSpreadsheet, Presentation, Trash2, Clock, Clipboard, Cpu, Hash, Key, QrCode, Smile, Globe2, Calendar, Binary, FileCode, Link2, StickyNote, Wind, Droplets, Eye, Cloud, Thermometer, Sunrise, Sunset, Gauge, CloudSun, Snowflake, CloudDrizzle, CloudHail, CloudFog, Palette, Bell, Database, Zap, Info, Check, X, Sliders, Volume2, Languages } from 'lucide-react';
 import { detectCommand, executeCommand, saveToClipboardHistory } from './commands';
 import type { CommandResult } from './commands';
 import { Terminal } from 'xterm';
@@ -22,11 +22,102 @@ interface SearchResult {
   helpCommands?: string;
 }
 
-type ViewMode = 'search' | 'ai';
+type ViewMode = 'search' | 'ai' | 'settings';
 
 const api = () => (window as any).electronAPI;
 
+// Default settings
+const defaultSettings = {
+  appearance: {
+    accentColor: '#7c5cfc',
+    fontSize: 'medium' as 'small' | 'medium' | 'large',
+    animations: true,
+    blur: true,
+    blurAmount: 40,
+    transparency: 85,
+    borderRadius: 14,
+    windowWidth: 680,
+    windowHeight: 600
+  },
+  search: {
+    maxResults: 20,
+    showWebSuggestions: true,
+    defaultCity: 'Berlin',
+    searchDelay: 100
+  },
+  features: {
+    weatherEnabled: true,
+    aiEnabled: true,
+    clipboardHistory: true,
+    notesEnabled: true
+  },
+  privacy: {
+    saveRecents: true,
+    saveClipboardHistory: true
+  }
+};
+
 function App() {
+  // Load settings from localStorage FIRST
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('windowsbar_settings');
+    if (saved) {
+      try {
+        return { ...defaultSettings, ...JSON.parse(saved) };
+      } catch (e) {
+        return defaultSettings;
+      }
+    }
+    return defaultSettings;
+  });
+
+  // Apply settings to CSS variables
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--accent', settings.appearance.accentColor);
+    root.style.setProperty('--radius', `${settings.appearance.borderRadius}px`);
+
+    // Font size
+    const fontSizes = { small: '14px', medium: '16px', large: '18px' };
+    root.style.setProperty('--font-size-base', fontSizes[settings.appearance.fontSize]);
+
+    // Transparency (0-100 -> 0.0-1.0)
+    const alpha = settings.appearance.transparency / 100;
+    root.style.setProperty('--bg-alpha', alpha.toString());
+
+    // Blur amount
+    root.style.setProperty('--blur-amount', `${settings.appearance.blurAmount}px`);
+
+    // Animations
+    if (!settings.appearance.animations) {
+      root.style.setProperty('--transition-speed', '0s');
+    } else {
+      root.style.setProperty('--transition-speed', '0.15s');
+    }
+  }, [settings]);
+
+  // Save settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('windowsbar_settings', JSON.stringify(settings));
+  }, [settings]);
+
+  // Update a specific setting
+  const updateSetting = (category: keyof typeof defaultSettings, key: string, value: any) => {
+    setSettings((prev: any) => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [key]: value
+      }
+    }));
+  };
+
+  // Reset settings to defaults
+  const resetSettings = () => {
+    setSettings(defaultSettings);
+    localStorage.setItem('windowsbar_settings', JSON.stringify(defaultSettings));
+  };
+
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [expandWeb, setExpandWeb] = useState(false);
@@ -104,6 +195,90 @@ function App() {
       } else {
         setResults([]);
       }
+      return;
+    }
+
+    // Natural language weather detection (without /)
+    const queryLower = query.trim().toLowerCase();
+    const weatherPatterns = ['wetter', 'weather', 'temperatur', 'wie wird das wetter', 'wie ist das wetter'];
+    const isWeatherQuery = weatherPatterns.some(p => queryLower.startsWith(p) || queryLower.includes(' wetter ') || queryLower.includes(' weather '));
+
+    if (isWeatherQuery && !query.trim().startsWith('/') && settings.features.weatherEnabled) {
+      const cityMatch = queryLower.match(/(?:wetter|weather|temperatur)\s+(.+)/);
+      const city = cityMatch ? cityMatch[1].trim() : settings.search.defaultCity;
+
+      fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=de`)
+        .then(r => r.json())
+        .then(data => {
+          const current = data.current_condition?.[0];
+          const today = data.weather?.[0];
+          const hourly = today?.hourly || [];
+
+          if (!current) {
+            setResults([{ id: 'cmd-err', title: 'Wetter nicht verfügbar', subtitle: 'Keine Daten erhalten', type: 'system' }]);
+            return;
+          }
+
+          const temp = current.temp_C;
+          const feelsLike = current.FeelsLikeC;
+          const humidity = current.humidity;
+          const windSpeed = current.windspeedKmph;
+          const windDir = current.winddir16Point;
+          const uvIndex = current.uvIndex;
+          const visibility = current.visibility;
+          const pressure = current.pressure;
+          const cloudCover = current.cloudcover;
+          const weatherDesc = current.lang_de?.[0]?.value || current.weatherDesc?.[0]?.value || 'Unbekannt';
+          const precip = current.precipMM;
+
+          // Extract hourly temperatures for graph
+          const hourlyData = hourly.map((h: any) => ({
+            time: h.time,
+            temp: parseInt(h.tempC),
+            feelsLike: parseInt(h.FeelsLikeC),
+            chanceOfRain: h.chanceofrain,
+            weatherIcon: h.weatherCode
+          }));
+
+          const weatherData = {
+            temp,
+            feelsLike,
+            humidity,
+            windSpeed,
+            windDir,
+            uvIndex,
+            visibility,
+            pressure,
+            cloudCover,
+            weatherDesc,
+            precip,
+            city,
+            minTemp: today?.mintempC,
+            maxTemp: today?.maxtempC,
+            sunrise: today?.astronomy?.[0]?.sunrise,
+            sunset: today?.astronomy?.[0]?.sunset,
+            hourly: hourlyData
+          };
+
+          setResults([{
+            id: 'weather-card',
+            title: `${temp}°C in ${city}`,
+            subtitle: `${weatherDesc}`,
+            type: 'weather',
+            path: JSON.stringify(weatherData),
+            isExpandBtn: false
+          }, {
+            id: 'weather-more',
+            title: `Vollständige Wettervorschau öffnen`,
+            subtitle: `wttr.in/${encodeURIComponent(city)}`,
+            type: 'web',
+            path: `https://wttr.in/${encodeURIComponent(city)}?lang=de`,
+            isWeb: true
+          }]);
+        })
+        .catch(() => {
+          setResults([{ id: 'cmd-err', title: 'Wetter nicht abrufbar', subtitle: 'Service nicht verfügbar', type: 'system' }]);
+        });
       return;
     }
 
@@ -327,10 +502,10 @@ function App() {
       }
 
       // Wetter - Detaillierte Einzelkarte (Deutsch)
-      if (cmd.startsWith('wetter') || cmd.startsWith('weather')) {
+      if ((cmd.startsWith('wetter') || cmd.startsWith('weather')) && settings.features.weatherEnabled) {
         const city = cmd.startsWith('wetter')
-          ? cmd.substring(6).trim() || 'Berlin'
-          : cmd.substring(7).trim() || 'Berlin';
+          ? cmd.substring(6).trim() || settings.search.defaultCity
+          : cmd.substring(7).trim() || settings.search.defaultCity;
 
         fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=de`)
           .then(r => r.json())
@@ -355,51 +530,41 @@ function App() {
             const weatherDesc = current.lang_de?.[0]?.value || current.weatherDesc?.[0]?.value || 'Unbekannt';
             const precip = current.precipMM;
 
-            // Einzelne detaillierte Karte mit allen Infos
-            const weatherResults: SearchResult[] = [
-              {
-                id: 'weather-main',
-                title: `${temp}°C in ${city} - ${weatherDesc}`,
-                subtitle: `Gefühlt ${feelsLike}°C | ${today ? `${today.mintempC}° bis ${today.maxtempC}°C` : ''}`,
-                type: 'weather',
-                path: `weather-detail`
-              },
-              {
-                id: 'weather-details',
-                title: `${windSpeed} km/h ${windDir} | ${humidity}% | UV ${uvIndex}`,
-                subtitle: `Wind | Feuchtigkeit | UV-Index`,
-                type: 'weather',
-                path: `weather-wind`
-              },
-              {
-                id: 'weather-extra',
-                title: `${visibility}km Sicht | ${cloudCover}% Wolken | ${pressure} hPa`,
-                subtitle: `Sichtweite | Bewölkung | Luftdruck`,
-                type: 'weather',
-                path: `weather-extra`
-              }
-            ];
+            // Eine einzelne, große Weather-Card mit allen Infos
+            const weatherData = {
+              temp,
+              feelsLike,
+              humidity,
+              windSpeed,
+              windDir,
+              uvIndex,
+              visibility,
+              pressure,
+              cloudCover,
+              weatherDesc,
+              precip,
+              city,
+              minTemp: today?.mintempC,
+              maxTemp: today?.maxtempC,
+              sunrise: today?.astronomy?.[0]?.sunrise,
+              sunset: today?.astronomy?.[0]?.sunset
+            };
 
-            if (today?.astronomy?.[0]) {
-              weatherResults.push({
-                id: 'weather-sun',
-                title: `${today.astronomy[0].sunrise} - ${today.astronomy[0].sunset}`,
-                subtitle: `Sonnenaufgang - Sonnenuntergang`,
-                type: 'weather',
-                path: `weather-sun`
-              });
-            }
-
-            weatherResults.push({
+            setResults([{
+              id: 'weather-card',
+              title: `${temp}°C in ${city}`,
+              subtitle: `${weatherDesc}`,
+              type: 'weather',
+              path: JSON.stringify(weatherData),
+              isExpandBtn: false
+            }, {
               id: 'weather-more',
               title: `Vollständige Wettervorschau öffnen`,
               subtitle: `wttr.in/${encodeURIComponent(city)}`,
               type: 'web',
               path: `https://wttr.in/${encodeURIComponent(city)}?lang=de`,
               isWeb: true
-            });
-
-            setResults(weatherResults);
+            }]);
           })
           .catch(() => {
             setResults([{ id: 'cmd-err', title: 'Wetter nicht abrufbar', subtitle: 'Service nicht verfügbar', type: 'system' }]);
@@ -601,6 +766,13 @@ function App() {
       if (cmd === 'shutdown') { api()?.openUrl('cmd://shutdown'); setResults([{ id: 'cmd-shut', title: 'Herunterfahren', subtitle: 'PC wird heruntergefahren...', type: 'system' }]); return; }
       if (cmd === 'restart') { api()?.openUrl('cmd://restart'); setResults([{ id: 'cmd-rest', title: 'Neustart', subtitle: 'PC wird neu gestartet...', type: 'system' }]); return; }
 
+      // Settings command
+      if (cmd === 'settings' || cmd === 'config' || cmd === 'prefs') {
+        setViewMode('settings');
+        try { api()?.resizeWindow(750, 650); } catch (e) { }
+        return;
+      }
+
       // Help - Interactive categories
       if (cmd === 'help' || cmd === '?') {
         setResults([
@@ -671,8 +843,8 @@ function App() {
         setResults(mappedLocal);
         setLoading(false);
 
-        // Implicitly try to fetch Instant Answers if not /ai
-        if (query.trim().length >= 2 && !query.startsWith('/ai')) {
+        // Implicitly try to fetch Instant Answers if not /ai and web suggestions enabled
+        if (query.trim().length >= 2 && !query.startsWith('/ai') && settings.search.showWebSuggestions) {
           api()?.fetchInstantAnswer(query).then((webRaw: any) => {
             if (webRaw && webRaw.length > 0) {
               setResults(prev => {
@@ -857,8 +1029,8 @@ function App() {
         return;
       }
 
-      // Collapse help category back to main help (when inside a category and Tab is pressed on any item)
-      if (expandedHelpCategory) {
+      // Collapse help category back to main help when inside a category
+      if (expandedHelpCategory && query.trim() !== '/help' && query.trim() !== '/?') {
         // Tab back to return to main help categories
         setQuery('/help');
         setExpandedHelpCategory(null);
@@ -1138,6 +1310,417 @@ function App() {
     );
   }
 
+  // Settings categories for sidebar
+  const settingsCategories = [
+    { id: 'appearance', label: 'Aussehen', icon: Palette },
+    { id: 'search', label: 'Suche', icon: Search },
+    { id: 'features', label: 'Funktionen', icon: Zap },
+    { id: 'privacy', label: 'Datenschutz', icon: Lock },
+    { id: 'about', label: 'Über', icon: Info }
+  ];
+
+  const [activeCategory, setActiveCategory] = useState('appearance');
+
+  // Settings mode
+  if (viewMode === 'settings') {
+    const accentColors = [
+      { name: 'Lila', value: '#7c5cfc' },
+      { name: 'Blau', value: '#3b82f6' },
+      { name: 'Cyan', value: '#06b6d4' },
+      { name: 'Grün', value: '#10b981' },
+      { name: 'Orange', value: '#f97316' },
+      { name: 'Rot', value: '#ef4444' },
+      { name: 'Pink', value: '#ec4899' }
+    ];
+
+    return (
+      <div className="app-container">
+        <div className="search-glass settings-view">
+          {/* Header */}
+          <div className="webview-header">
+            <button className="webview-back" onClick={backToSearch}>
+              <ArrowLeft size={16} />
+              <span>Zurück</span>
+            </button>
+            <span className="webview-title">Einstellungen</span>
+            <div style={{ width: 100 }} />
+          </div>
+
+          {/* Settings Content */}
+          <div className="settings-container">
+            {/* Sidebar */}
+            <div className="settings-sidebar">
+              {settingsCategories.map(cat => (
+                <button
+                  key={cat.id}
+                  className={`settings-nav-item ${activeCategory === cat.id ? 'active' : ''}`}
+                  onClick={() => setActiveCategory(cat.id)}
+                >
+                  <cat.icon size={16} />
+                  <span>{cat.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Main Content */}
+            <div className="settings-content">
+              {/* Appearance */}
+              {activeCategory === 'appearance' && (
+                <div className="settings-section">
+                  <h2 className="settings-title">Aussehen</h2>
+
+                  <div className="settings-group">
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Akzentfarbe</span>
+                        <span className="settings-item-desc">Wähle die Hauptfarbe der App</span>
+                      </div>
+                      <div className="color-picker">
+                        {accentColors.map(color => (
+                          <button
+                            key={color.value}
+                            className={`color-option ${settings.appearance.accentColor === color.value ? 'selected' : ''}`}
+                            style={{ backgroundColor: color.value }}
+                            onClick={() => updateSetting('appearance', 'accentColor', color.value)}
+                            title={color.name}
+                          >
+                            {settings.appearance.accentColor === color.value && <Check size={12} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Schriftgröße</span>
+                        <span className="settings-item-desc">Passe die Textgröße an</span>
+                      </div>
+                      <select
+                        className="settings-select"
+                        value={settings.appearance.fontSize}
+                        onChange={(e) => updateSetting('appearance', 'fontSize', e.target.value)}
+                      >
+                        <option value="small">Klein</option>
+                        <option value="medium">Mittel</option>
+                        <option value="large">Groß</option>
+                      </select>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Animationen</span>
+                        <span className="settings-item-desc">Aktiviere sanfte Übergänge</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.appearance.animations}
+                          onChange={(e) => updateSetting('appearance', 'animations', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Hintergrundunschärfe</span>
+                        <span className="settings-item-desc">Glasmorphismus-Effekt</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.appearance.blur}
+                          onChange={(e) => updateSetting('appearance', 'blur', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item slider-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Transparenz</span>
+                        <span className="settings-item-desc">Hintergrunddurchsichtigkeit: {settings.appearance.transparency}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        className="settings-slider"
+                        value={settings.appearance.transparency}
+                        onChange={(e) => updateSetting('appearance', 'transparency', parseInt(e.target.value))}
+                        min={20}
+                        max={100}
+                      />
+                    </div>
+
+                    <div className="settings-item slider-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Unschärfe-Stärke</span>
+                        <span className="settings-item-desc">Blur-Effekt: {settings.appearance.blurAmount}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        className="settings-slider"
+                        value={settings.appearance.blurAmount}
+                        onChange={(e) => updateSetting('appearance', 'blurAmount', parseInt(e.target.value))}
+                        min={0}
+                        max={80}
+                      />
+                    </div>
+
+                    <div className="settings-item slider-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Ab rundungen</span>
+                        <span className="settings-item-desc">Fenster-Ecken: {settings.appearance.borderRadius}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        className="settings-slider"
+                        value={settings.appearance.borderRadius}
+                        onChange={(e) => updateSetting('appearance', 'borderRadius', parseInt(e.target.value))}
+                        min={0}
+                        max={30}
+                      />
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Auf Standard zurücksetzen</span>
+                        <span className="settings-item-desc">Alle Einstellungen zurücksetzen</span>
+                      </div>
+                      <button className="settings-btn" onClick={resetSettings}>
+                        Zurücksetzen
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Search */}
+              {activeCategory === 'search' && (
+                <div className="settings-section">
+                  <h2 className="settings-title">Suche</h2>
+
+                  <div className="settings-group">
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Maximale Ergebnisse</span>
+                        <span className="settings-item-desc">Anzahl der angezeigten Suchergebnisse</span>
+                      </div>
+                      <input
+                        type="number"
+                        className="settings-input"
+                        value={settings.search.maxResults}
+                        onChange={(e) => updateSetting('search', 'maxResults', parseInt(e.target.value) || 20)}
+                        min={5}
+                        max={50}
+                      />
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Web-Vorschläge</span>
+                        <span className="settings-item-desc">Zeige Online-Suchergebnisse</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.search.showWebSuggestions}
+                          onChange={(e) => updateSetting('search', 'showWebSuggestions', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Standardstadt für Wetter</span>
+                        <span className="settings-item-desc">Stadt für /wetter Befehl</span>
+                      </div>
+                      <input
+                        type="text"
+                        className="settings-input"
+                        value={settings.search.defaultCity}
+                        onChange={(e) => updateSetting('search', 'defaultCity', e.target.value)}
+                        placeholder="Berlin"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Features */}
+              {activeCategory === 'features' && (
+                <div className="settings-section">
+                  <h2 className="settings-title">Funktionen</h2>
+
+                  <div className="settings-group">
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Wetter-Befehl</span>
+                        <span className="settings-item-desc">Aktiviere /wetter und Wetter-Quick-Action</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.features.weatherEnabled}
+                          onChange={(e) => updateSetting('features', 'weatherEnabled', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">KI-Chat</span>
+                        <span className="settings-item-desc">Aktiviere /ai für Gemini-Integration</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.features.aiEnabled}
+                          onChange={(e) => updateSetting('features', 'aiEnabled', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Zwischenablage-Verlauf</span>
+                        <span className="settings-item-desc">Speichere kopierte Texte</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.features.clipboardHistory}
+                          onChange={(e) => updateSetting('features', 'clipboardHistory', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Notizen</span>
+                        <span className="settings-item-desc">Aktiviere /note zum Speichern von Notizen</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.features.notesEnabled}
+                          onChange={(e) => updateSetting('features', 'notesEnabled', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Privacy */}
+              {activeCategory === 'privacy' && (
+                <div className="settings-section">
+                  <h2 className="settings-title">Datenschutz</h2>
+
+                  <div className="settings-group">
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Letzte Suchen speichern</span>
+                        <span className="settings-item-desc">Zeige zuletzt gesuchte Dateien an</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.privacy.saveRecents}
+                          onChange={(e) => updateSetting('privacy', 'saveRecents', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Zwischenablage-Verlauf speichern</span>
+                        <span className="settings-item-desc">Speichere kopierte Texte lokal</span>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.privacy.saveClipboardHistory}
+                          onChange={(e) => updateSetting('privacy', 'saveClipboardHistory', e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+
+                    <div className="settings-item danger">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Alle Daten löschen</span>
+                        <span className="settings-item-desc">Entferne alle gespeicherten Daten</span>
+                      </div>
+                      <button
+                        className="settings-btn danger"
+                        onClick={() => {
+                          if (confirm('Möchtest du wirklich alle Daten löschen?')) {
+                            localStorage.clear();
+                            setRecentItems([]);
+                            setSettings(defaultSettings);
+                          }
+                        }}
+                      >
+                        Löschen
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* About */}
+              {activeCategory === 'about' && (
+                <div className="settings-section">
+                  <h2 className="settings-title">Über Windows Bar</h2>
+
+                  <div className="settings-group">
+                    <div className="about-card">
+                      <div className="about-icon">
+                        <Monitor size={48} />
+                      </div>
+                      <h3>Windows Bar</h3>
+                      <p className="about-version">Version 1.0.0</p>
+                      <p className="about-desc">
+                        Ein schneller und eleganter App-Launcher für Windows mit
+                        integrierter KI, Wetter-Anzeige und vielen nützlichen Befehlen.
+                      </p>
+                      <div className="about-links">
+                        <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="about-link">
+                          <Globe size={14} />
+                          GitHub
+                        </a>
+                      </div>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Tastenkürzel</span>
+                        <span className="settings-item-desc">Drücke Alt+Space zum Öffnen</span>
+                      </div>
+                    </div>
+
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-item-title">Befehle</span>
+                        <span className="settings-item-desc">Tippe /help für alle Befehle</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Search mode
   return (
     <div className="app-container">
@@ -1186,14 +1769,13 @@ function App() {
               </div>
             </div>
             <div className="quick-action" onClick={() => {
-              setQuery('/g Wetter heute');
+              setQuery('wetter');
               setTimeout(() => {
                 inputRef.current?.focus();
-                // Move cursor to end
-                inputRef.current?.setSelectionRange(15, 15);
+                inputRef.current?.setSelectionRange(6, 6);
               }, 50);
             }}>
-              <div className="quick-action-icon calc"><Calculator size={15} /></div>
+              <div className="quick-action-icon calc"><CloudSun size={15} /></div>
               <div className="quick-action-text">
                 <span className="quick-action-title">Wetter</span>
                 <span className="quick-action-sub">Direkt anzeigen</span>
@@ -1223,28 +1805,303 @@ function App() {
                 </button>
               </div>
             )}
-            {displayResults.map((res, idx) => (
-              <div
-                key={res.id}
-                className={`result-item ${idx === selectedIndex ? 'selected' : ''} ${res.isSubItem ? 'sub-item' : ''}`}
-                onClick={() => executeAction(res)}
-                onMouseEnter={() => {
-                  if (interactionMode.current === 'mouse') {
-                    setSelectedIndex(idx);
-                  }
-                }}
-              >
-                <div className={`result-icon ${res.type}`}>
-                  {getIcon(res.type, res.path)}
+            {displayResults.map((res, idx) => {
+              // Special rendering for weather card
+              if (res.id === 'weather-card' && res.path) {
+                try {
+                  const data = JSON.parse(res.path);
+
+                  // Temperature graph rendering - show all 24 hours
+                  const hourlyData = data.hourly || [];
+                  const graphHours = hourlyData.slice(0, 24); // All 24 hours
+                  const temps = graphHours.map((h: { temp: number }) => h.temp);
+                  const minTemp = Math.min(...temps) - 2;
+                  const maxTemp = Math.max(...temps) + 2;
+                  const tempRange = maxTemp - minTemp || 1;
+
+                  // SVG graph dimensions - wider for 24 hours
+                  const graphWidth = 600;
+                  const graphHeight = 80;
+                  const padding = 15;
+
+                  // Generate path points
+                  const points = graphHours.map((h: { temp: number; time: string }, i: number) => {
+                    const x = padding + (i / (graphHours.length - 1 || 1)) * (graphWidth - padding * 2);
+                    const y = graphHeight - padding - ((h.temp - minTemp) / tempRange) * (graphHeight - padding * 2);
+                    return { x, y, temp: h.temp, time: h.time };
+                  });
+
+                  // Create smooth curve path
+                  const pathD = points.map((p: { x: number; y: number; temp: number; time: string }, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+                  // Create gradient area under curve
+                  const areaD = `${pathD} L ${points[points.length - 1]?.x || 0} ${graphHeight - padding} L ${padding} ${graphHeight - padding} Z`;
+
+                  return (
+                    <div
+                      key={res.id}
+                      className={`weather-card ${idx === selectedIndex ? 'selected' : ''}`}
+                      onClick={() => executeAction(res)}
+                      onMouseEnter={() => {
+                        if (interactionMode.current === 'mouse') {
+                          setSelectedIndex(idx);
+                        }
+                      }}
+                    >
+                      <div className="weather-header">
+                        <div className="weather-icon-main"><CloudSun size={32} /></div>
+                        <div className="weather-temp">
+                          <span className="temp-value">{data.temp}°C</span>
+                          <span className="temp-city">{data.city}</span>
+                        </div>
+                      </div>
+                      <div className="weather-desc">{data.weatherDesc}</div>
+                      <div className="weather-range">Gefühlt {data.feelsLike}°C | {data.minTemp}° bis {data.maxTemp}°C</div>
+
+                      {/* Temperature Graph */}
+                      {graphHours.length > 1 && (
+                        <div className="weather-graph-container">
+                          <svg className="weather-graph" viewBox={`0 0 ${graphWidth} ${graphHeight}`}>
+                            <defs>
+                              <linearGradient id="tempGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stopColor="rgba(56, 189, 248, 0.4)" />
+                                <stop offset="100%" stopColor="rgba(56, 189, 248, 0.05)" />
+                              </linearGradient>
+                            </defs>
+                            {/* Grid lines */}
+                            {[0, 1, 2].map(i => (
+                              <line
+                                key={i}
+                                x1={padding}
+                                y1={padding + i * (graphHeight - padding * 2) / 2}
+                                x2={graphWidth - padding}
+                                y2={padding + i * (graphHeight - padding * 2) / 2}
+                                stroke="rgba(255,255,255,0.05)"
+                                strokeWidth="1"
+                              />
+                            ))}
+                            {/* Area under curve */}
+                            <path d={areaD} fill="url(#tempGradient)" />
+                            {/* Temperature line */}
+                            <path d={pathD} fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            {/* Data points */}
+                            {points.map((p: { x: number; y: number; temp: number; time: string }, i: number) => (
+                              <g key={i}>
+                                <circle cx={p.x} cy={p.y} r="3" fill="#38bdf8" />
+                                <circle cx={p.x} cy={p.y} r="5" fill="rgba(56, 189, 248, 0.3)" />
+                              </g>
+                            ))}
+                          </svg>
+                          {/* Time labels */}
+                          <div className="weather-graph-labels">
+                            {points.map((p: { x: number; y: number; temp: number; time: string }, i: number) => (
+                              <span key={i} className="weather-graph-label">
+                                {parseInt(p.time) ? `${parseInt(p.time)}:00` : p.time}
+                              </span>
+                            ))}
+                          </div>
+                          {/* Temperature labels */}
+                          <div className="weather-graph-temps">
+                            {points.map((p: { x: number; y: number; temp: number; time: string }, i: number) => (
+                              <span key={i} className="weather-graph-temp">{p.temp}°</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Precipitation Zone Bar - 24 hours with icons - time synchronized with temperature graph */}
+                      {hourlyData.length > 0 && (
+                        <div className="weather-precip-zone">
+                          <div className="weather-precip-label">
+                            Niederschlag (24h)
+                            {hourlyData.some((h: any) => {
+                              const chance = parseInt(h.chanceOfRain) || 0;
+                              const weatherCode = parseInt(h.weatherIcon) || 0;
+                              // Check for any precipitation type
+                              const isRain = weatherCode >= 61 && weatherCode <= 67;
+                              const isSnow = weatherCode >= 71 && weatherCode <= 86;
+                              const isHail = weatherCode === 87 || weatherCode === 88;
+                              const isSleet = weatherCode >= 68 && weatherCode <= 70;
+                              const isFreezing = weatherCode >= 49 && weatherCode <= 57;
+                              return chance > 20 && (isRain || isSnow || isHail || isSleet || isFreezing);
+                            }) && (
+                                <span className="weather-precip-warning">
+                                  <CloudDrizzle size={12} /> Niederschlag erwartet
+                                </span>
+                              )}
+                          </div>
+
+                          {/* Precipitation bar - bars grow from bottom */}
+                          <div className="weather-precip-bar">
+                            {hourlyData.slice(0, 24).map((h: any, i: number) => {
+                              const chance = parseInt(h.chanceOfRain) || 0;
+                              const weatherCode = parseInt(h.weatherIcon) || 0;
+
+                              // Determine precipitation type based on weather code
+                              // Weather codes: https://openweathermap.org/weather-conditions
+                              // 61-67: Rain, 71-86: Snow, 87-88: Hail, 68-70: Sleet, 49-57: Freezing
+                              const isSnow = weatherCode >= 71 && weatherCode <= 86;
+                              const isHail = weatherCode === 87 || weatherCode === 88;
+                              const isSleet = weatherCode >= 68 && weatherCode <= 70;
+                              const isFreezing = weatherCode >= 49 && weatherCode <= 57;
+                              const isRain = weatherCode >= 61 && weatherCode <= 67;
+
+                              // Show precipitation if chance > 20% and has precipitation type
+                              const hasPrecip = chance > 20 && (isRain || isSnow || isHail || isSleet || isFreezing);
+
+                              // Determine the precipitation type class
+                              const getPrecipType = () => {
+                                if (isSnow) return 'snow';
+                                if (isHail) return 'hail';
+                                if (isSleet) return 'sleet';
+                                if (isFreezing) return 'sleet';
+                                if (isRain) return 'rain';
+                                return '';
+                              };
+
+                              // Determine the segment type class for background
+                              const getSegmentType = () => {
+                                if (isSnow) return 'snow-type';
+                                if (isHail) return 'hail-type';
+                                if (isSleet) return 'hail-type';
+                                return '';
+                              };
+
+                              // Get the appropriate icon
+                              const getPrecipIcon = () => {
+                                if (isSnow) return <Snowflake size={10} />;
+                                if (isHail) return <CloudHail size={10} />;
+                                if (isSleet || isFreezing) return <CloudFog size={10} />;
+                                if (isRain) return <CloudDrizzle size={10} />;
+                                return <CloudDrizzle size={10} />;
+                              };
+
+                              // Get icon class
+                              const getIconClass = () => {
+                                if (isSnow) return 'snow-icon';
+                                if (isHail) return 'hail-icon';
+                                if (isSleet || isFreezing) return 'sleet-icon';
+                                if (isRain) return 'rain-icon';
+                                return 'rain-icon';
+                              };
+
+                              // Calculate bar height - grows from bottom
+                              const barHeight = hasPrecip ? Math.max(chance, 15) : Math.max(chance, 5);
+
+                              return (
+                                <div
+                                  key={i}
+                                  className={`weather-precip-segment ${hasPrecip ? 'has-precip' : ''} ${hasPrecip ? getSegmentType() : ''}`}
+                                >
+                                  {/* Icon above bar when precipitation is expected */}
+                                  {hasPrecip && (
+                                    <div className={`weather-precip-icon ${getIconClass()}`}>
+                                      {getPrecipIcon()}
+                                    </div>
+                                  )}
+                                  {/* Bar that grows from bottom */}
+                                  <div
+                                    className={`weather-precip-fill ${getPrecipType()}`}
+                                    style={{ height: `${barHeight}%` }}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Time labels - synchronized with temperature graph */}
+                          <div className="weather-precip-time-labels">
+                            {hourlyData.slice(0, 24).map((h: any, i: number) => {
+                              const chance = parseInt(h.chanceOfRain) || 0;
+                              const weatherCode = parseInt(h.weatherIcon) || 0;
+                              const isRain = weatherCode >= 61 && weatherCode <= 67;
+                              const isSnow = weatherCode >= 71 && weatherCode <= 86;
+                              const isHail = weatherCode === 87 || weatherCode === 88;
+                              const isSleet = weatherCode >= 68 && weatherCode <= 70;
+                              const hasPrecip = chance > 20 && (isRain || isSnow || isHail || isSleet);
+                              const time = h.time || '';
+
+                              // Show time label every 3 hours (0, 3, 6, 9, 12, 15, 18, 21)
+                              if (i % 3 === 0) {
+                                return (
+                                  <span
+                                    key={i}
+                                    className={`weather-precip-time ${hasPrecip ? 'highlight' : ''}`}
+                                    style={{ flex: 3 }}
+                                  >
+                                    {parseInt(time) ? `${parseInt(time)}:00` : time}
+                                  </span>
+                                );
+                              }
+                              return <span key={i} className="weather-precip-time" style={{ flex: 1 }} />;
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="weather-grid">
+                        <div className="weather-stat">
+                          <Wind size={14} />
+                          <span>{data.windSpeed} km/h {data.windDir}</span>
+                        </div>
+                        <div className="weather-stat">
+                          <Droplets size={14} />
+                          <span>{data.humidity}%</span>
+                        </div>
+                        <div className="weather-stat">
+                          <Sun size={14} />
+                          <span>UV {data.uvIndex}</span>
+                        </div>
+                        <div className="weather-stat">
+                          <Eye size={14} />
+                          <span>{data.visibility}km</span>
+                        </div>
+                        <div className="weather-stat">
+                          <Cloud size={14} />
+                          <span>{data.cloudCover}%</span>
+                        </div>
+                        <div className="weather-stat">
+                          <Gauge size={14} />
+                          <span>{data.pressure} hPa</span>
+                        </div>
+                      </div>
+                      {data.sunrise && data.sunset && (
+                        <div className="weather-sun">
+                          <span><Sunrise size={14} /> {data.sunrise}</span>
+                          <span><Sunset size={14} /> {data.sunset}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                } catch (e) {
+                  return null;
+                }
+              }
+
+              // Normal result items
+              return (
+                <div
+                  key={res.id}
+                  className={`result-item ${idx === selectedIndex ? 'selected' : ''} ${res.isSubItem ? 'sub-item' : ''}`}
+                  onClick={() => executeAction(res)}
+                  onMouseEnter={() => {
+                    if (interactionMode.current === 'mouse') {
+                      setSelectedIndex(idx);
+                    }
+                  }}
+                >
+                  <div className={`result-icon ${res.type}`}>
+                    {getIcon(res.type, res.path)}
+                  </div>
+                  <div className="result-content">
+                    <span className="result-title" style={res.isExpandBtn ? { color: 'var(--accent)' } : {}}>{res.title}</span>
+                    {res.subtitle && <span className="result-subtitle">{res.subtitle}</span>}
+                  </div>
+                  {!res.isExpandBtn && <span className="result-badge">{getBadge(res.type)}</span>}
+                  <span className="result-enter">{res.isExpandBtn ? 'Tab' : '↵'}</span>
                 </div>
-                <div className="result-content">
-                  <span className="result-title" style={res.isExpandBtn ? { color: 'var(--accent)' } : {}}>{res.title}</span>
-                  {res.subtitle && <span className="result-subtitle">{res.subtitle}</span>}
-                </div>
-                {!res.isExpandBtn && <span className="result-badge">{getBadge(res.type)}</span>}
-                <span className="result-enter">{res.isExpandBtn ? 'Tab' : '↵'}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
