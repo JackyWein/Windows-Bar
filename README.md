@@ -1,349 +1,507 @@
-# Windows Bar 🚀
+<div align="center">
 
-Eine schnelle, elegante Suchleiste für Windows im Stil von macOS Spotlight und Raycast.
+# Windows Bar
 
-## ✨ NEU in v2.0: 32+ Quick Commands!
+**A premium productivity launcher for Windows.**
 
-Tippe `>` gefolgt von einem Befehl direkt in die Suchleiste:
+Blazing-fast app search, multi-provider AI chat, 40+ built-in commands, and deep system integration — all in a single keystroke.
 
-### 📊 Rechner & Zahlen
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>calc 123*45` | Taschenrechner |
-| `>random 1-100` | Zufallszahl |
-| `>uuid` | UUID generieren |
-| `>binary Text` | Text zu Binär |
-| `>hex Text` | Text zu Hexadezimal |
-
-### 🔐 Sicherheit & Hashes
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>pass 16` | Sicheres Passwort |
-| `>hash Text` | SHA-256 Hash |
-| `>key 32` | API-Key generieren |
-
-### 📝 Text-Tools
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>enc/dec Text` | Base64 kodieren/dekodieren |
-| `>url/unurl Text` | URL kodieren/dekodieren |
-| `>json {"a":1}` | JSON formatieren |
-| `>len/count/rev/upper/lower/trim` | Text-Operationen |
-| `>sort/unique/replace` | Listen-Operationen |
-
-### 🌐 Web & Netzwerk
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>ip` | Öffentliche IP-Adresse |
-| `>shorten URL` | URL kürzen |
-| `>qr Text` | QR-Code generieren |
-| `>weather Stadt` | Wetter anzeigen |
-| `>wiki Thema` | Wikipedia |
-| `>tr en:de Text` | Übersetzen |
-
-### ⏰ Datum & Zeit
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>now` | Aktuelle Zeit |
-| `>age 1990-05-15` | Alter berechnen |
-| `>days 2024-12-31` | Tage bis Datum |
-| `>week` | Kalenderwoche |
-
-### 💾 Zwischenablage & Notizen
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>cp` | Zwischenablage anzeigen |
-| `>cp Text` | In Zwischenablage kopieren |
-| `>history` | Zwischenablage-Verlauf |
-| `>note/notes/clear-notes` | Schnelle Notizen |
-
-### 🖥️ System-Befehle
-| Befehl | Beschreibung |
-|--------|-------------|
-| `>sys` | Systeminfos (CPU, RAM, Disk) |
-| `>proc` | Laufende Prozesse |
-| `>kill Name` | Prozess beenden |
-| `>run notepad` | Programm starten |
-| `>sleep` | Bildschirm ausschalten |
-| `>mute` | Stummschalten |
-| `>trash` | Papierkorb leeren |
-| `>ss` | Screenshot |
-| `>lock/shutdown/restart` | PC steuern |
-
+[![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron)]()
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)]()
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite)]()
+[![License](https://img.shields.io/badge/License-MIT-green)]()
 
 ![Windows Bar](resources/icon.png)
 
-## Funktionen
-
-### 🔍 Universelle Suche
-- **Lokale Dateisuche**: Durchsucht Apps, Dateien, Ordner und Dokumente blitzschnell
-- **Smart Indexing**: Automatische Indexierung von Startmenü, Program Files, Benutzerordnern und allen Laufwerken
-- **Game-Erkennung**: Erkennt automatisch installierte Spiele von Steam, Epic Games und Riot Games
-
-### 🌐 Web-Suche (`/g`)
-- **Inline-Ergebnisse**: Zeigt Web-Ergebnisse direkt in der Suchleiste
-- **DuckDuckGo Integration**: Liefert Wikipedia-Zusammenfassungen und Instant Answers
-- **Google Auto-Complete**: Zeigt Suchvorschläge während der Eingabe
-
-### 🤖 KI-Chat (`/ai`)
-- **Google Gemini CLI**: Integrierte Terminal-Oberfläche für Google Gemini
-- **Nativer Terminal-Zugriff**: Direkter Zugriff auf cmd.exe für KI-Interaktionen
-
-### ⛅ Wetter
-- **Sofortige Wetteranzeige**: Gib "Wetter" oder "Wetter [Stadt]" ein
-- **Kompakte Anzeige**: Temperatur, Wetterbedingung und Windstärke auf einen Blick
-
-### 🧮 Taschenrechner
-- **Mathematische Ausdrücke**: Gib mathematische Ausdrücke ein (z.B. `123 + 456 * 2`)
-- **Sofortiges Ergebnis**: Ergebnisse werden direkt angezeigt
-
-### 📁 Ordner-Vorschau
-- **Tab-Expansion**: Drücke `Tab` auf einem Ordner, um den Inhalt anzuzeigen
-- **Schnellnavigation**: Durchsuche Unterordner ohne den Datei-Explorer zu öffnen
-
-### 🕐 Verlauf
-- **Zuletzt gesucht**: Die letzten 5 Suchergebnisse werden gespeichert
-- **Schnellzugriff**: Häufig genutzte Apps und Dateien sind sofort verfügbar
-
-### ⚡ Quick Actions
-Schnellzugriff-Buttons für häufige Aktionen:
-- **KI Chat**: Gemini direkt öffnen
-- **Web Suche**: Inline Web-Suche starten
-- **Dateien**: Schnellzugriff auf Benutzerordner
-- **Wetter**: Aktuelles Wetter anzeigen
-
-### 🛠️ System-Tools
-Windows Bar bietet direkten Zugriff auf wichtige System-Tools:
-- **Einstellungen** (`ms-settings:`) - Windows Einstellungen
-- **Systemsteuerung** (`control`) - Klassische Systemsteuerung
-- **Registrierungs-Editor** (`regedit`) - Windows Registry
-- **Task-Manager** (`taskmgr`) - Prozessverwaltung
-- **Datei-Explorer** (`explorer`) - Windows Explorer
-- **Rechner** (`calc`) - Windows Taschenrechner
-- **Editor** (`notepad`) - Notepad
-- **Eingabeaufforderung** (`cmd`) - Command Prompt
-- **PowerShell** (`powershell`) - PowerShell
-- **Geräte-Manager** (`devmgmt.msc`) - Gerätemanager
-
-### 🎮 Gaming-Integration
-Automatische Erkennung von Spielen aus:
-- **Steam**: Liest `libraryfolders.vdf` für alle Bibliotheken
-- **Epic Games**: Durchsucht Epic Games Installationsordner
-- **Riot Games**: Erkennt League of Legends, Valorant, etc.
-- **Direkter Start**: Spiele werden via `steam://rungameid/` gestartet
-
-### 🔎 Smarte Suchlogik
-- **Exakter Treffer**: Höchste Priorität bei exaktem Namensmatch
-- **Benutzerordner-Priorität**: Downloads, Desktop, Dokumente werden bevorzugt
-- **Typ-Priorisierung**: Ordner > Spiele > Apps > System
-- **Verschachtelungs-Strafe**: Flache Pfade werden bevorzugt
-- **Fuzzy-Suche**: Teilbegriffe werden gefunden
+</div>
 
 ---
 
-## Installation
+## Overview
 
-### Voraussetzungen
-- Windows 10 oder Windows 11
-- Node.js 18+ und npm
+Windows Bar is an always-on-top desktop launcher inspired by macOS Spotlight and Raycast. Toggle it with **Alt+Space**, search for apps, files, games, run commands, or chat with AI — then it gets out of your way.
 
-### Entwicklung
-
-```bash
-# Repository klonen
-git clone https://github.com/JackyWein/Windows-Bar.git
-cd Windows-Bar
-
-# Abhängigkeiten installieren
-npm install
-
-# Entwicklung starten
-npm run dev
-```
-
-### Build
-
-```bash
-# Produktions-Build erstellen
-npm run build
-
-# Electron-App starten
-npm run electron
+```mermaid
+graph LR
+    A["Alt + Space"] --> B[Windows Bar]
+    B --> C[Search]
+    B --> D[AI Chat]
+    B --> E[Commands]
+    B --> F[Settings]
+    C --> C1[Apps & Files]
+    C --> C2[Games]
+    C --> C3[Web Results]
+    C --> C4[Instant Answers]
+    D --> D1[Anthropic]
+    D --> D2[OpenAI]
+    D --> D3[Gemini]
+    D --> D4[Ollama]
+    D --> D5[Custom / CLI]
+    E --> E1[Calculator]
+    E --> E2[Text Tools]
+    E --> E3[System Control]
+    E --> E4[Web Lookup]
+    E --> E5[Clipboard & Notes]
 ```
 
 ---
 
-## Bedienung
+## Features
 
-### Tastenkürzel
+### Universal Search
 
-| Taste | Funktion |
-|-------|----------|
-| `Alt + Space` | Windows Bar öffnen/schließen |
-| `↑` / `↓` | Durch Ergebnisse navigieren |
-| `Enter` | Ausgewähltes Element öffnen |
-| `Tab` | Ordnerinhalt anzeigen / Web-Vorschläge einblenden |
-| `Escape` | Schließen |
+Search across your entire system from a single input. Results are scored with a weighted relevance algorithm that prioritizes user folders, exact matches, and item type.
 
-### Befehle
+```mermaid
+flowchart TD
+    subgraph Index Sources
+        A[Start Menu]
+        B[Program Files]
+        C[User Folders]
+        D[All Drives]
+        E[Steam / Epic / Riot]
+        F[System Tools]
+    end
 
-| Befehl | Beschreibung |
-|--------|--------------|
-| `/ai` | Google Gemini KI-Chat öffnen |
-| `/g [Suchbegriff]` | Web-Suche mit Inline-Ergebnissen |
-| `Wetter` oder `Wetter [Stadt]` | Aktuelles Wetter anzeigen |
-| Mathematischer Ausdruck (z.B. `5+5`) | Ergebnis berechnen |
+    subgraph Scoring
+        G[Exact Match +500]
+        H[Prefix Match +200]
+        I[User Folder +150/1000]
+        J[Type Boost +20..50]
+        K[Nesting Penalty -20/level]
+    end
 
-### Suchtipps
-
-1. **Apps finden**: Gib den App-Namen ein (z.B. "Chrome", "Photoshop")
-2. **Dateien finden**: Gib den Dateinamen oder -typ ein (z.B. "pdf", "bild")
-3. **Spiele finden**: Spiele werden automatisch erkannt und als "Spiel" markiert
-4. **System-Tools**: Gib "Einstellungen", "Task-Manager" oder "PowerShell" ein
-
----
-
-## Einstellungen
-
-### Autostart
-Windows Bar registriert sich automatisch beim ersten Start als Autostart-Programm.
-
-### Google Gemini CLI einrichten
-
-1. Installiere die Gemini CLI:
-   ```bash
-   npm install -g @anthropic-ai/gemini-cli
-   ```
-   Oder folge der offiziellen [Gemini CLI Dokumentation](https://github.com/google-gemini/gemini-cli)
-
-2. Authentifiziere dich:
-   ```bash
-   gemini auth login
-   ```
-
-3. Starte Windows Bar neu und gib `/ai` ein
-
-### Indizierte Ordner
-Windows Bar durchsucht automatisch:
-- Startmenü (Programme)
-- Program Files & Program Files (x86)
-- Benutzerordner (Desktop, Downloads, Dokumente, Bilder, Videos, Musik)
-- Steam-Bibliotheken
-- Epic Games
-- Riot Games
-- Alle verfügbaren Laufwerke (C:, D:, E:, F:, G:, H:)
-
-### Ausgeschlossene Ordner
-Folgende Ordner werden von der Indexierung ausgeschlossen:
-- `node_modules`, `.git`, `__pycache__`
-- `$recycle.bin`, `$windows.~bt`, `$windows.~ws`
-- `Windows`, `System Volume Information`, `Recovery`
-- `ProgramData`, `AppData`
-
----
-
-## Design & Customizing
-
-### CSS-Variablen anpassen
-Das Erscheinungsbild kann über CSS-Variablen in `src/index.css` angepasst werden:
-
-```css
-:root {
-  --bg: rgba(15, 15, 20, 0.85);        /* Hintergrundfarbe */
-  --border: rgba(255, 255, 255, 0.08); /* Rahmenfarbe */
-  --text: #f0f0f5;                     /* Textfarbe */
-  --text-muted: #6b6b80;               /* Gedämpfter Text */
-  --text-dim: #4a4a5a;                 /* Schwacher Text */
-  --accent: #7c5cfc;                   /* Akzentfarbe (Lila) */
-  --item-hover: rgba(255, 255, 255, 0.04);  /* Hover-Effekt */
-  --item-selected: rgba(124, 92, 252, 0.08); /* Auswahl-Effekt */
-  --green: #4ade80;                    /* Spiele-Farbe */
-  --blue: #60a5fa;                     /* Dateien-Farbe */
-  --orange: #fb923c;                   /* Web/Folder-Farbe */
-  --pink: #f472b6;                     /* KI-Farbe */
-  --radius: 14px;                      /* Abrundung */
-}
+    A --> L[File Index]
+    B --> L
+    C --> L
+    D --> L
+    E --> L
+    F --> L
+    L --> M[User Query]
+    M --> N{Match All Terms?}
+    N -->|Yes| O[Apply Scoring]
+    O --> P[Top 15 Results]
+    N -->|No| Q[Filtered Out]
 ```
 
-### Typspezifische Icon-Farben
-Jeder Ergebnistyp hat eine eigene Farbe:
-- **Apps**: Lila (`--accent`)
-- **Dateien**: Blau (`--blue`)
-- **Spiele**: Grün (`--green`)
-- **Web**: Orange (`--orange`)
-- **KI**: Pink (`--pink`)
-- **System**: Grau
-- **Ordner**: Orange
+**Indexed locations:**
+- Start Menu, Program Files (x86/x64), user folders (Desktop, Downloads, Documents, Pictures, Videos, Music)
+- Steam libraries (multi-library via `libraryfolders.vdf`), Epic Games, Riot Games
+- All mounted drives (C:–H:), root-level crawling (depth 2)
+- 10 hardcoded system tools (Settings, Task Manager, Registry Editor, etc.)
 
-### Dateityp-spezifische Icons
-Windows Bar zeigt verschiedene Icons basierend auf dem Dateityp:
-- 🎵 **Audio**: mp3, wav, flac, aac, ogg, m4a, wma
-- 🎬 **Video**: mp4, mkv, avi, mov, wmv, flv, webm
-- 🖼️ **Bilder**: jpg, jpeg, png, gif, bmp, webp, svg, ico
-- 📦 **Archive**: zip, rar, 7z, tar, gz, bz2
-- 💻 **Code**: js, ts, jsx, tsx, py, java, cpp, c, cs, go, rs, rb, php, html, css, json, xml
-- 📄 **Dokumente**: pdf, doc, docx, txt, rtf, odt
-- 📊 **Tabellen**: xls, xlsx, csv, ods
-- 📽️ **Präsentationen**: ppt, pptx, odp
-- 💾 **Laufwerke**: C:\, D:\, etc.
+**Game detection** parses Steam `appmanifest_*.acf` files to extract app IDs, names, and main executables — launches via `steam://rungameid/` protocol.
 
-### Glaseffekt-UI
-- **Blur-Effekt**: 40px Backdrop-Blur mit Sättigung
-- **Transparenz**: Halbtransparenter Hintergrund
-- **Animation**: Sanfte Einblend-Animation beim Öffnen
+### AI Chat
+
+Integrated multi-provider chat with streaming responses, session persistence, and OS-level credential storage.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CE as ChatEngine
+    participant SS as SessionStore
+    participant PR as Provider Registry
+    participant MP as Main Process
+    participant API as External API
+
+    U->>CE: Send message
+    CE->>SS: Persist user message
+    CE->>PR: Build request (provider-specific)
+    PR-->>CE: AIRequest (serializable)
+    CE->>MP: IPC: ai:chat
+    MP->>API: net.fetch() / spawn()
+    loop SSE Stream
+        API-->>MP: data chunk
+        MP-->>CE: IPC: ai:chunk
+        CE-->>U: Append to streaming content
+    end
+    API-->>MP: [DONE]
+    MP-->>CE: IPC: ai:complete
+    CE->>SS: Persist assistant message
+```
+
+**Supported providers:**
+
+| Provider | Type | Models |
+|----------|------|--------|
+| Anthropic | API (SSE) | Claude Sonnet 4.6, Opus 4.6, Haiku 4.5 |
+| OpenAI | API (SSE) | GPT-4o, GPT-4o-mini, o3-mini |
+| Google Gemini | API (SSE) | Gemini 2.0 Pro, 2.0 Flash |
+| Ollama | API (local) | Llama 3, Mistral, Code Llama |
+| Custom | API (OpenAI-compatible) | User-defined |
+| CLI | Shell process | Any terminal AI tool |
+
+**Security:** API keys are encrypted via Electron `safeStorage` (OS keychain) — they never touch localStorage or the renderer process unencrypted.
+
+**Session management:** Up to 50 chat sessions persisted in localStorage with auto-titling, search, and bulk delete.
+
+### Built-in Commands
+
+Over 40 commands across 8 categories, invoked with `/` prefix directly in the search bar.
+
+| Category | Commands |
+|----------|----------|
+| **Calculator** | `/calc`, `/uuid`, `/now`, `/ts`, `/random`, `/pass`, `/hash`, `/color`, `/lorem`, `/bin`, `/hex`, `/age`, `/days`, `/week`, `/len` |
+| **Text** | `/enc`, `/dec`, `/json`, `/rev`, `/upper`, `/lower`, `/url`, `/unurl` |
+| **Web** | `/qr`, `/ip`, `/wiki`, `/tr` |
+| **Notes** | `/note`, `/notes`, `/clear-notes` |
+| **Clipboard** | `/cp`, `/history` |
+| **System** | `/sys`, `/proc`, `/kill`, `/run` |
+| **Power** | `/sleep`, `/mute`, `/trash`, `/ss`, `/lock`, `/shutdown`, `/restart` |
+
+### Themes & Customization
+
+8 built-in themes with full CSS variable control. Every visual aspect is configurable — accent color, blur radius, border radius, font family, transparency, compact mode, and more.
+
+```mermaid
+graph TD
+    A[AppSettings] --> B[ThemeProvider]
+    B --> C{resolveTheme}
+    C --> D[User Theme Override]
+    C --> E[Built-in Theme]
+    D --> F[applyAllAppearance]
+    E --> F
+    F --> G["CSS Custom Properties on :root"]
+    G --> H["All UI components react via var()"]
+```
+
+| Theme | Style |
+|-------|-------|
+| Dark Default | Standard dark |
+| Dark Purple | Purple accent dark |
+| Ocean Blue | Blue-tinted dark |
+| Light | Clean light |
+| Warm Light | Warm-toned light |
+| Nord | Nord palette |
+| Dracula | Dracula palette |
+| Catppuccin Mocha | Catppuccin palette |
 
 ---
 
-## Technologie
+## Architecture
 
-- **Frontend**: React 19 + TypeScript + Vite
-- **Backend**: Electron 41
-- **Terminal**: xterm.js mit FitAddon
-- **Animationen**: Framer Motion
-- **Icons**: Lucide React
-- **Web-APIs**: DuckDuckGo Instant Answer, wttr.in (Wetter), Google Suggest
+### High-Level
 
----
+```mermaid
+graph TB
+    subgraph Main Process ["Electron Main Process"]
+        MW[BrowserWindow]
+        IDX[File Indexer]
+        IPC[IPC Handlers]
+        SS[safeStorage]
+        FS[File System]
+    end
 
-## Projektstruktur
+    subgraph Preload ["Preload Bridge"]
+        CB[contextBridge]
+        EA[electronAPI]
+        PA[pluginAPI]
+    end
+
+    subgraph Renderer ["React Renderer"]
+        APP[App.tsx]
+        SV[SearchView]
+        AV[AiView]
+        SETV[SettingsView]
+        CORE[Core Modules]
+    end
+
+    MW <-->|IPC| CB
+    CB --> EA
+    CB --> PA
+    EA --> APP
+    PA --> CORE
+    APP --> SV
+    APP --> AV
+    APP --> SETV
+    SV --> CORE
+    AV --> CORE
+    SETV --> CORE
+    IDX --> FS
+    IPC --> SS
+```
+
+### Module Map
 
 ```
 Windows-Bar/
-├── electron/
-│   ├── main.ts          # Electron Main Process
-│   ├── preload.ts       # Preload Script für IPC
-│   └── preload.cjs      # CommonJS Preload
+├── electron/                    # Main process
+│   ├── main.ts                  #   Window creation, IPC handlers, file indexer
+│   ├── preload.ts               #   contextBridge → electronAPI + pluginAPI
+│   ├── utils/icons.ts           #   Icon extraction (base64, getFileIcon, Steam)
+│   └── indexers/
+│       ├── types.ts             #   IndexItem, extension sets, skip lists
+│       └── steam.ts             #   VDF parser, appmanifest reader
+│
 ├── src/
-│   ├── App.tsx          # Hauptkomponente
-│   ├── main.tsx         # React Entry Point
-│   ├── index.css        # Globale Styles
-│   └── components/      # React Komponenten
-├── resources/
-│   └── icon.png         # App-Icon
-├── dist-electron/       # Kompilierte Electron-Dateien
-└── dist/                # Kompilierte Web-Dateien
+│   ├── App.tsx                  # Root: view routing, settings, appearance
+│   ├── main.tsx                 # React entry point
+│   ├── types.ts                 # Central type definitions
+│   ├── preload.d.ts             # API type declarations
+│   │
+│   ├── core/
+│   │   ├── ai/
+│   │   │   ├── types.ts         #     AIModel, ChatMessage, AIProvider, AIRequest
+│   │   │   ├── chat.ts          #     ChatEngine (single conversation state)
+│   │   │   ├── sessions.ts      #     SessionStore (localStorage, max 50)
+│   │   │   └── providers/
+│   │   │       ├── registry.ts  #     ProviderRegistry singleton
+│   │   │       ├── openai.ts    #     OpenAI GPT-4o/o3-mini
+│   │   │       ├── anthropic.ts #     Claude Sonnet/Opus/Haiku
+│   │   │       ├── gemini.ts    #     Gemini 2.0 Pro/Flash
+│   │   │       ├── ollama.ts    #     Local Llama/Mistral
+│   │   │       ├── cli.ts       #     Shell command provider
+│   │   │       └── custom.ts    #     OpenAI-compatible custom endpoint
+│   │   │
+│   │   ├── commands/
+│   │   │   ├── registry.ts      #     CommandRegistry singleton
+│   │   │   └── builtin/         #     8 command modules (~40 commands)
+│   │   │
+│   │   ├── plugins/
+│   │   │   ├── types.ts         #     PluginContext, PluginModule interfaces
+│   │   │   └── manager.ts       #     PluginManager (install/uninstall/toggle)
+│   │   │
+│   │   ├── settings/
+│   │   │   └── themes.ts        #     8 built-in themes, applyTheme()
+│   │   │
+│   │   └── shortcuts/
+│   │       ├── defaults.ts      #     9 default bindings
+│   │       └── manager.ts       #     ShortcutManager (match, conflicts, format)
+│   │
+│   ├── views/
+│   │   ├── SearchView.tsx       #   Main search: input, results, commands, weather
+│   │   ├── AiView.tsx           #   AI chat: streaming, history, provider config
+│   │   ├── SettingsView.tsx     #   Settings: 9 categories with live preview
+│   │   └── ai/
+│   │       ├── ChatInput.tsx    #     Auto-resize textarea, Enter/Shift+Enter
+│   │       ├── ChatMessage.tsx  #     Markdown bubbles, code blocks, copy
+│   │       ├── ChatMessages.tsx #     Scrollable list, auto-scroll, streaming
+│   │       ├── ChatToolbar.tsx  #     Back, rename, model badge, actions
+│   │       ├── HistoryModal.tsx #     Session search, keyboard nav, bulk delete
+│   │       ├── ProviderModal.tsx#     Provider config, API keys, test connection
+│   │       └── OnboardingCard.tsx # First-time provider setup
+│   │
+│   ├── components/
+│   │   ├── ThemeProvider.tsx    #   React context: theme resolution + CSS vars
+│   │   └── ConfirmDialog.tsx    #   Custom confirm dialog with keyboard nav
+│   │
+│   └── styles/
+│       ├── base.css             #   CSS variables, glassmorphism, animations
+│       ├── search.css           #   Search input, results, commands, weather
+│       ├── ai.css               #   Chat UI, messages, code blocks, modals
+│       └── settings.css         #   Settings panels, toggles, theme grid
+│
+└── resources/
+    ├── icon.png                 # App icon
+    └── es.exe                   # Everything search binary
+```
+
+### IPC Bridge
+
+The preload script exposes two typed APIs to the renderer:
+
+**`electronAPI`** — 25+ methods for window control, search, system info, clipboard, AI chat, and credential storage.
+
+**`pluginAPI`** — 4 methods for plugin lifecycle management (list, install, uninstall, toggle).
+
+All IPC is typed in `src/preload.d.ts` for full TypeScript safety across the process boundary.
+
+### Data Flow
+
+```mermaid
+flowchart LR
+    subgraph Input
+        KB[Keyboard]
+        MS[Mouse]
+    end
+
+    subgraph View Layer
+        SV[SearchView]
+        AV[AiView]
+        SETV[SettingsView]
+    end
+
+    subgraph Core Layer
+        CR[CommandRegistry]
+        CE[ChatEngine]
+        SS[SessionStore]
+        PR[ProviderRegistry]
+        SM[ShortcutManager]
+        TM[ThemeProvider]
+        PM[PluginManager]
+    end
+
+    subgraph Electron
+        IPC[IPC Handlers]
+        FS[File System]
+        NET[Network]
+        KS[OS Keychain]
+    end
+
+    KB --> SV
+    KB --> AV
+    KB --> SETV
+    SV --> CR
+    SV --> IPC
+    AV --> CE
+    CE --> SS
+    CE --> PR
+    PR --> IPC
+    SETV --> TM
+    SETV --> SM
+    SETV --> PM
+    PM --> IPC
+    IPC --> FS
+    IPC --> NET
+    IPC --> KS
 ```
 
 ---
 
-## Mitwirken
+## Keyboard Shortcuts
 
-Beiträge sind willkommen! Bitte erstelle einen Pull Request oder eröffne ein Issue.
+All views are fully keyboard-navigable with rebindable shortcuts and focus zones.
 
-## Lizenz
-
-MIT License - Siehe [LICENSE](LICENSE) für Details.
+| Shortcut | Action | Context |
+|----------|--------|---------|
+| `Alt + Space` | Toggle window | Global |
+| `↑` / `↓` | Navigate results | Search |
+| `Enter` | Execute selected | Search |
+| `Tab` / `Shift + Tab` | Cycle focus zones | Search (4 zones) |
+| `Ctrl + Tab` | Toggle web suggestions | Search |
+| `Ctrl + I` | Open AI chat | Global |
+| `Ctrl + ,` | Open settings | Global |
+| `Ctrl + N` | New chat | AI |
+| `Ctrl + H` | Chat history | AI |
+| `Ctrl + P` | Provider settings | AI |
+| `Ctrl + L` | Focus chat input | AI |
+| `Escape` | Close / Go back | Global |
 
 ---
 
-## Bekannte Probleme
+## Setup
 
-- Icons werden für einige Dateitypen möglicherweise nicht korrekt angezeigt (Fallback-Icons werden verwendet)
-- Gemini CLI muss separat installiert werden
+### Prerequisites
+
+- Windows 10 or 11
+- [Bun](https://bun.sh/) (preferred) or Node.js 18+
+
+### Development
+
+```bash
+git clone https://github.com/JackyWein/Windows-Bar.git
+cd Windows-Bar
+bun install
+bun run dev
+```
+
+### Production Build
+
+```bash
+bun run build
+```
+
+Outputs an NSIS installer to `dist/`.
+
+---
+
+## Extensibility
+
+### Plugin System
+
+Plugins are directory-based packages with a `manifest.json` and a JavaScript entry point. The infrastructure for install, uninstall, and toggle is in place.
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "description": "Does something useful",
+  "author": "you",
+  "main": "index.js"
+}
+```
+
+```typescript
+// Plugin entry point (index.js)
+module.exports = {
+  activate(context) {
+    context.registerCommand({
+      id: 'my-cmd',
+      trigger: '/my',
+      handler: (args, ctx) => ({ results: [] })
+    });
+  },
+  deactivate() {}
+};
+```
+
+Plugins are stored in `%APPDATA%/plugins/` and can register custom commands, settings, and IPC handlers.
+
+### Custom AI Providers
+
+Any OpenAI-compatible API endpoint can be added as a custom provider directly from the settings UI — no code changes required. Local endpoints (localhost/127.0.0.1) work without an API key.
+
+### Custom Themes
+
+Themes are defined as plain objects mapping CSS variable names to color values. Add new themes to `src/core/settings/themes.ts`:
+
+```typescript
+{
+  id: 'my-theme',
+  name: 'My Theme',
+  type: 'dark',
+  colors: {
+    bg: '#0a0a0f',
+    surface: '#14141f',
+    border: 'rgba(255,255,255,0.06)',
+    text: '#e0e0e8',
+    textMuted: '#6b6b80',
+    accent: '#ff6b6b',
+    accentHover: '#ff5252',
+    app: '#c084fc',
+    game: '#4ade80',
+    file: '#60a5fa',
+    web: '#fb923c',
+    system: '#94a3b8',
+  }
+}
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Desktop framework | Electron 41 |
+| UI framework | React 19 |
+| Language | TypeScript 5.9 (strict) |
+| Build tool | Vite 8 |
+| Icons | Lucide React |
+| Markdown | react-markdown + remark-gfm + rehype-highlight |
+| Packaging | electron-builder (NSIS) |
+| Runtime | Bun (preferred), Node.js 18+ |
+
+---
+
+## Known Issues
+
+- Some file type icons may fall back to defaults depending on the file association
+- Plugin loading and activation is not yet fully implemented (infrastructure only)
 
 ## Roadmap
 
-- [ ] Einstellungs-UI für Indizierungsoptionen
-- [ ] Weitere KI-Provider (Claude, ChatGPT)
-- [ ] Plugin-System für benutzerdefinierte Erweiterungen
-- [ ] Themes und Anpassungsmöglichkeiten
+- [ ] Plugin loading engine (evaluate entry points, call activate/deactivate)
+- [ ] Settings UI for index configuration (custom folders, exclusions)
+- [ ] Natural language command parsing
+- [ ] Window management commands (snap, move, resize)
+- [ ] Scripting API for advanced automation
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
