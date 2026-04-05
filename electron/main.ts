@@ -1,8 +1,9 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, screen, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, screen, powerSaveBlocker, safeStorage } from 'electron';
 import { join } from 'path';
 import { promises as fs } from 'fs';
 import { homedir } from 'os';
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
+import { tryGetIconWithRetry, iconCache } from './utils/icons';
 
 // ========================
 // CUSTOM FAST INDEXER
@@ -506,8 +507,20 @@ ipcMain.handle('search-everything', async (_event, query: string) => {
   if (!query?.trim()) return [];
   const top15 = searchIndex(query);
 
-  // Return results without icons - frontend uses type-specific fallback icons
-  return top15.map(item => ({ ...item, iconBase64: null }));
+  // Return results with iconPath for lazy icon fetching
+  return top15.map(item => ({ ...item, iconBase64: null, iconPath: item.iconPath || item.path }));
+});
+
+// Icon cache for lazy loading
+const fileIconCache = new Map<string, string | null>();
+
+ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
+  if (!filePath) return null;
+  if (fileIconCache.has(filePath)) return fileIconCache.get(filePath);
+
+  const icon = await tryGetIconWithRetry(filePath);
+  fileIconCache.set(filePath, icon);
+  return icon;
 });
 
 ipcMain.handle('fetch-instant-answer', async (_event, query: string) => {
@@ -906,5 +919,297 @@ ipcMain.on('write-clipboard', (_event, text: string) => {
     exec(`powershell -command "Set-Clipboard -Value '${escaped}'"`);
   } catch (e) {
     console.error('write-clipboard error:', e);
+  }
+});
+
+// ========================
+// PLUGIN SYSTEM
+// ========================
+
+const PLUGINS_DIR = join(app.getPath('userData'), 'plugins');
+
+/** Ensure the plugins directory exists */
+async function ensurePluginsDir(): Promise<void> {
+  try { await fs.mkdir(PLUGINS_DIR, { recursive: true }); } catch { /* already exists */ }
+}
+
+/** Read and parse a plugin manifest.json */
+async function readManifest(pluginDir: string): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await fs.readFile(join(pluginDir, 'manifest.json'), 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('plugin:list', async () => {
+  await ensurePluginsDir();
+  const plugins: Array<Record<string, unknown>> = [];
+
+  try {
+    const entries = await fs.readdir(PLUGINS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifest = await readManifest(join(PLUGINS_DIR, entry.name));
+      if (manifest) {
+        plugins.push({
+          id: manifest.id ?? entry.name,
+          name: manifest.name ?? entry.name,
+          version: manifest.version ?? '0.0.0',
+          description: manifest.description ?? '',
+          author: manifest.author ?? '',
+          enabled: true,
+          installed: true,
+        });
+      }
+    }
+  } catch (e) {
+    console.error('plugin:list error:', e);
+  }
+
+  return plugins;
+});
+
+ipcMain.handle('plugin:install', async (_event, sourcePath: string) => {
+  await ensurePluginsDir();
+
+  // Read manifest from source
+  const manifest = await readManifest(sourcePath);
+  if (!manifest) {
+    throw new Error('No manifest.json found in plugin folder');
+  }
+
+  const pluginId = String(manifest.id ?? 'unknown-plugin');
+  const destDir = join(PLUGINS_DIR, pluginId);
+
+  // Copy plugin files
+  await fs.cp(sourcePath, destDir, { recursive: true, force: true });
+
+  return {
+    id: pluginId,
+    name: String(manifest.name ?? pluginId),
+    version: String(manifest.version ?? '0.0.0'),
+    description: String(manifest.description ?? ''),
+    author: String(manifest.author ?? ''),
+    enabled: true,
+    installed: true,
+  };
+});
+
+ipcMain.handle('plugin:uninstall', async (_event, pluginId: string) => {
+  const pluginDir = join(PLUGINS_DIR, pluginId);
+  try {
+    await fs.rm(pluginDir, { recursive: true, force: true });
+  } catch (e) {
+    console.error('plugin:uninstall error:', e);
+    throw e;
+  }
+});
+
+ipcMain.handle('plugin:toggle', async (_event, pluginId: string, enabled: boolean) => {
+  // Plugin enabled state is managed on the renderer side via settings.
+  // The main process just acknowledges the toggle.
+  console.log(`[WindowsBar] Plugin ${pluginId} ${enabled ? 'enabled' : 'disabled'}`);
+  return { id: pluginId, enabled };
+});
+
+// ========================
+// AI CHAT IPC HANDLERS
+// ========================
+
+// Credential storage using Electron safeStorage (OS keychain encryption)
+function getCredentialPath(): string {
+  return join(app.getPath('userData'), 'ai-credentials.json');
+}
+
+async function loadCredentials(): Promise<Record<string, string>> {
+  try {
+    const raw = await fs.readFile(getCredentialPath(), 'utf-8');
+    if (!safeStorage.isEncryptionAvailable()) return JSON.parse(raw);
+    const decrypted = safeStorage.decryptString(Buffer.from(raw, 'utf-8'));
+    return JSON.parse(decrypted);
+  } catch {
+    return {};
+  }
+}
+
+async function saveCredentials(creds: Record<string, string>): Promise<void> {
+  const json = JSON.stringify(creds);
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = safeStorage.encryptString(json);
+    await fs.writeFile(getCredentialPath(), encrypted);
+  } else {
+    await fs.writeFile(getCredentialPath(), json);
+  }
+}
+
+ipcMain.handle('store-credential', async (_event, key: string, value: string) => {
+  const creds = await loadCredentials();
+  creds[key] = value;
+  await saveCredentials(creds);
+  return true;
+});
+
+ipcMain.handle('get-credential', async (_event, key: string) => {
+  const creds = await loadCredentials();
+  return creds[key] ?? null;
+});
+
+ipcMain.handle('delete-credential', async (_event, key: string) => {
+  const creds = await loadCredentials();
+  delete creds[key];
+  await saveCredentials(creds);
+  return true;
+});
+
+// AI Chat proxy — executes API or CLI requests from the main process
+// to avoid CORS issues in the renderer
+let activeAiProcess: ChildProcess | null = null;
+
+ipcMain.handle('ai:chat', async (event, request: {
+  providerType: string;
+  url?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  cliCommand?: string;
+  cliArgs?: string[];
+  cliInput?: string;
+}) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) throw new Error('No window found');
+
+  // CLI provider
+  if (request.providerType === 'cli' && request.cliCommand) {
+    return new Promise<void>((resolve, reject) => {
+      const proc = spawn(request.cliCommand!, request.cliArgs ?? [], {
+        shell: true,
+        env: { ...process.env },
+      });
+      activeAiProcess = proc;
+
+      proc.stdout.on('data', (data: Buffer) => {
+        win.webContents.send('ai:chunk', data.toString());
+      });
+
+      proc.stderr.on('data', (data: Buffer) => {
+        win.webContents.send('ai:chunk', data.toString());
+      });
+
+      proc.on('close', () => {
+        activeAiProcess = null;
+        win.webContents.send('ai:complete', {});
+        resolve();
+      });
+
+      proc.on('error', (err) => {
+        activeAiProcess = null;
+        win.webContents.send('ai:error', err.message);
+        reject(err);
+      });
+
+      // Send input after a short delay
+      if (request.cliInput) {
+        setTimeout(() => {
+          proc.stdin?.write(request.cliInput + '\n');
+          proc.stdin?.end();
+        }, 300);
+      }
+    });
+  }
+
+  // API provider
+  if (request.url) {
+    try {
+      const response = await net.fetch(request.url, {
+        method: 'POST',
+        headers: request.headers ?? {},
+        body: request.body ? JSON.stringify(request.body) : undefined,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`API error ${response.status}: ${errorBody}`);
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+
+      // Handle SSE streaming
+      if (contentType.includes('text/event-stream') || request.body &&
+          typeof request.body === 'object' && 'stream' in request.body &&
+          (request.body as Record<string, unknown>).stream === true) {
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        const decoder = new TextDecoder();
+        let fullContent = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const text = decoder.decode(value, { stream: true });
+            const lines = text.split('\n');
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+
+                // OpenAI / Ollama format
+                if (parsed.choices?.[0]?.delta?.content) {
+                  const chunk = parsed.choices[0].delta.content;
+                  fullContent += chunk;
+                  win.webContents.send('ai:chunk', chunk);
+                }
+
+                // Anthropic format
+                if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                  fullContent += parsed.delta.text;
+                  win.webContents.send('ai:chunk', parsed.delta.text);
+                }
+
+                // Gemini format
+                if (parsed.candidates?.[0]?.content?.parts?.[0]?.text) {
+                  const chunk = parsed.candidates[0].content.parts[0].text;
+                  fullContent += chunk;
+                  win.webContents.send('ai:chunk', chunk);
+                }
+              } catch {
+                // Non-JSON line, skip
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        win.webContents.send('ai:complete', { content: fullContent });
+        return { content: fullContent };
+      }
+
+      // Non-streaming response
+      const data = await response.json();
+      win.webContents.send('ai:complete', data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      win.webContents.send('ai:error', message);
+      throw err;
+    }
+  }
+
+  throw new Error('Invalid AI request: no URL or CLI command');
+});
+
+ipcMain.on('ai:abort', () => {
+  if (activeAiProcess) {
+    activeAiProcess.kill();
+    activeAiProcess = null;
   }
 });

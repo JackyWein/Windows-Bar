@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchEverything: (query: string) => ipcRenderer.invoke('search-everything', query),
   fetchInstantAnswer: (query: string) => ipcRenderer.invoke('fetch-instant-answer', query),
 
-  // Native Terminal for Gemini CLI
+  // Legacy terminal (kept for backward compat, will be removed)
   startTerminal: () => ipcRenderer.send('start-terminal'),
   stopTerminal: () => ipcRenderer.send('stop-terminal'),
   sendTerminalInput: (data: string) => ipcRenderer.send('terminal-input', data),
@@ -33,4 +33,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listProcesses: () => ipcRenderer.invoke('list-processes'),
   readClipboard: () => ipcRenderer.invoke('read-clipboard'),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
+
+  // AI Chat
+  aiChat: (request: unknown) => ipcRenderer.invoke('ai:chat', request),
+  aiAbort: () => ipcRenderer.send('ai:abort'),
+  onAiChunk: (callback: (chunk: string) => void) => {
+    ipcRenderer.on('ai:chunk', (_event, chunk) => callback(chunk));
+  },
+  onAiComplete: (callback: (result: unknown) => void) => {
+    ipcRenderer.on('ai:complete', (_event, result) => callback(result));
+  },
+  onAiError: (callback: (error: string) => void) => {
+    ipcRenderer.on('ai:error', (_event, error) => callback(error));
+  },
+  removeAiListeners: () => {
+    ipcRenderer.removeAllListeners('ai:chunk');
+    ipcRenderer.removeAllListeners('ai:complete');
+    ipcRenderer.removeAllListeners('ai:error');
+  },
+
+  // Credential storage (encrypted via OS keychain)
+  storeCredential: (key: string, value: string) => ipcRenderer.invoke('store-credential', key, value),
+  getCredential: (key: string) => ipcRenderer.invoke('get-credential', key),
+  deleteCredential: (key: string) => ipcRenderer.invoke('delete-credential', key),
+});
+
+// Plugin API bridge
+contextBridge.exposeInMainWorld('pluginAPI', {
+  list: () => ipcRenderer.invoke('plugin:list'),
+  install: (source: string) => ipcRenderer.invoke('plugin:install', source),
+  uninstall: (id: string) => ipcRenderer.invoke('plugin:uninstall', id),
+  toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin:toggle', id, enabled),
 });

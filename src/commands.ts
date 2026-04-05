@@ -800,7 +800,7 @@ function simpleMD5(string: string): string {
 // ===========================================
 // 14. UNIX TIMESTAMP
 // ===========================================
-export function handleTimestampCommand(query: string): CommandResult[] {
+export function handleTimestampCommand(_query: string): CommandResult[] {
     const now = new Date();
     const unix = Math.floor(now.getTime() / 1000);
 

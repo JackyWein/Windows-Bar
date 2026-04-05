@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg-alpha: 0.85;
+  --bg: rgba(15, 15, 20, var(--bg-alpha));
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #f0f0f5;
+  --text-muted: #6b6b80;
+  --text-dim: #4a4a5a;
+  --accent: #7c5cfc;
+  --item-hover: rgba(255, 255, 255, 0.04);
+  --item-selected: rgba(124, 92, 252, 0.08);
+  --green: #4ade80;
+  --blue: #60a5fa;
+  --orange: #fb923c;
+  --pink: #f472b6;
+  --radius: 14px;
+  --blur-amount: 40px;
+  --transition-speed: 0.15s;
+  --font-size-base: 16px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  color: var(--text);
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: var(--font-size-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.search-glass {
+  width: 680px;
+  max-height: 95vh;
+  background: var(--bg);
+  backdrop-filter: blur(var(--blur-amount)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--blur-amount)) saturate(200%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.search-glass.expanded {
+  width: 820px;
+  max-height: 80vh;
+  height: 80vh;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Shared button styles */
+.btn-primary,
+.btn-secondary {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  font-family: inherit;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--item-hover);
+}
+
+/* Shared scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
