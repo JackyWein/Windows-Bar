@@ -1,7 +1,7 @@
 {
   "name": "windows-bar",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Premium Windows Search Bar Replacement",
   "author": "JackyWein",
   "main": "dist-electron/main.js",
