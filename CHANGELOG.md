@@ -1,0 +1,64 @@
+# Changelog
+
+Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
+
+## [1.0.5] - 2026-04-06
+
+Dieses Update bringt wichtige Stabilitätsverbesserungen für das automatische Update-System.
+
+**🐛 Bugfixes**
+* **Auto-Updater Fix:** Behebt einen Fehler (404 Not Found für `latest.yml`), durch den die App neue Updates nicht korrekt erkennen und herunterladen konnte.
+* **Build-Prozess:** Der interne Build-Prozess wurde optimiert, um Metadaten-Dateien für Releases nun immer zuverlässig zu generieren.
+
+### 🔄 Auto-Update
+Nutzer der Version 1.0.4 können sich dieses Update manuell herunterladen. Zukünftige Versionen (ab 1.0.5) werden sich dann komplett automatisch und still im Hintergrund aktualisieren!
+
+## [1.0.4] - 2026-04-01
+
+Dies ist ein großes Feature-Release für die Premium Search Bar.
+
+**✨ Neue Features & Highlights**
+* **Unified Search:** Blitzschnelle, übergreifende Suche durch lokale Dateien, Programme, Startmenü und Steam/Epic/Riot Games.
+* **Erweitertes Plugin-System:** Unterstützung für erweiterbare Plugins zur individuellen Anpassung der Bar.
+* **Instant Answers:** Schnelle Antworten für Mathe-Aufgaben, Wetter und Web-Suchen direkt in den Suchergebnissen.
+
+**⚙️ System & Unterbau**
+* Implementierung des automatischen Silent-Updaters im Hintergrund.
+* Caching-System für Programm- und Datei-Icons für wesentlich schnellere Ladezeiten.
+
+## [1.0.3] - 2026-03-15
+
+Dieses Update erweitert die KI-Fähigkeiten und bringt neue Systembefehle.
+
+**✨ Neue Features**
+* **Mehr KI-Modelle:** Neben OpenAI werden nun auch Anthropic (Claude 3.5 Sonnet/Opus) und Google Gemini (2.0 Pro/Flash) direkt im Chat unterstützt.
+* **Sichere API-Keys:** API-Schlüssel für die KI-Modelle werden nun sicher und verschlüsselt im Betriebssystem gespeichert (Electron safeStorage).
+* **System-Befehle:** Direkte Steuerung des PCs über die Suchleiste hinzugefügt. Unterstützt nun Befehle wie Volume Control, Sleep, Mute, und das Leeren des Papierkorbs.
+
+## [1.0.2] - 2026-02-28
+
+Fokus auf Suchgeschwindigkeit und tiefere Windows-Integration.
+
+**🚀 Performance**
+* **Everything-Integration:** Die Suche nutzt nun optional den "Everything"-Indexer für eine sofortige und systemweite Dateisuche ohne Ladezeiten.
+* **Fallback-Suche:** Intelligenter Fallback auf den regulären Windows Search Indexer, falls "Everything" nicht installiert oder gestartet ist.
+
+**🐛 Bugfixes**
+* Verbesserte Erkennung von versteckten Dateien und Systemordnern.
+
+## [1.0.1] - 2026-02-10
+
+Erstes Update mit Fokus auf Design und Benutzerfreundlichkeit.
+
+**🎨 UI/UX Verbesserungen**
+* Transparenz- und Blur-Effekte (Mica/Acrylic) für ein nativeres Windows 11 Gefühl verfeinert.
+* Tastenkürzel (Alt+Space) zum schnellen Öffnen/Schließen zuverlässiger gemacht.
+* Overlay-Modus hinzugefügt: Die Bar kann nun auch über Vollbild-Anwendungen und Spielen angezeigt werden.
+
+## [1.0.0] - 2026-01-20
+
+**🎉 Initial Release**
+* Grundlegende Veröffentlichung der Windows-Bar.
+* Lokale Dateisuche und Programmstarter implementiert.
+* Erster Entwurf des integrierten KI-Chats (OpenAI).
+* Basis-Einstellungen für Autostart und Always-on-Top.
