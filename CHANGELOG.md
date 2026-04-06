@@ -1,6 +1,26 @@
 # Changelog
 
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
+## [1.0.7] - 2026-04-08
+
+Dieses Update bringt ein komplett neues System für die Release-Notes und behebt Layout-Fehler in den Einstellungen.
+
+**✨ Neue Features & Highlights**
+
+* **Dynamischer Changelog:** Die In-App Release-Notes werden jetzt vollautomatisch im Hintergrund generiert. Nie wieder hartcodierte Texte!
+
+* **Release-Skript Upgrade:** Das interne Skript für automatische Updates liest Dateien nun extrem fehlertolerant und filtert unsichtbare Windows-Zeichen (BOM) automatisch heraus.
+
+**🎨 UI/UX Verbesserungen**
+
+* **Scroll-Fix in Einstellungen:** Der Changelog-Tab ist unten nicht mehr abgeschnitten, sodass nun bequem bis zur allerersten Version gescrollt werden kann.
+
+* **Listen-Design:** Die Aufzählungspunkte im Changelog nutzen nun ein sauberes Flexbox-Layout und erstrahlen dynamisch in deiner aktuellen Akzentfarbe.
+
+**🐛 Bugfixes**
+
+* **Code-Bereinigung:** Ungenutzte Imports und störende TypeScript-Warnungen in der Settings-Ansicht wurden vollständig entfernt.
+
 ## [1.0.6] - 2026-04-07
 
 Dieses Update konzentriert sich auf eine massive Verbesserung der Performance und die Beseitigung technischer Altlasten.

@@ -5,12 +5,15 @@ import {
   Monitor, Globe, SlidersHorizontal,
   Search, Terminal, Download, Puzzle,
   FolderOpen, Trash2, RefreshCw, History,
-  Power, Settings2, ExternalLink, AlertCircle,
+  Power,
 } from 'lucide-react';
 import type { AppSettings } from '../types';
 import { builtinThemes } from '../core/settings/themes';
 import { commandRegistry } from '../core/commands/registry';
 import { useConfirm } from '../components/ConfirmDialog';
+
+// Wir importieren die Markdown-Datei direkt als rohen Text via Vite (?raw)
+import changelogRaw from '../../CHANGELOG.md?raw';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -48,7 +51,7 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   const [plugins, setPlugins] = useState<Array<{ id: string; name: string; version: string; description: string; author: string; enabled: boolean }>>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [confirmDialog, confirm] = useConfirm();
-  
+
   // Update check state
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<{
@@ -66,6 +69,79 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
 
   // Commands list for the commands settings
   const commands = useMemo(() => commandRegistry.getAll(), []);
+
+  // WICHTIG: useMemo muss auf der Top-Ebene der Komponente aufgerufen werden, nicht in Unterfunktionen!
+  const parsedChangelogs = useMemo(() => {
+    try {
+      const logs: Array<{ version: string; date: string; changes: string[] }> = [];
+      let currentLog: { version: string; date: string; changes: string[] } | null = null;
+
+      // Sicherheitsabfrage, falls Vite den Raw-Import unerwartet lädt
+      const rawContent = typeof changelogRaw === 'string' ? changelogRaw : '';
+      const lines = rawContent.split('\n');
+
+      for (const line of lines) {
+        const tLine = line.trim();
+        if (!tLine) continue; // Leere Zeilen überspringen
+
+        // Sucht nach Überschriften wie "## [1.0.6] - 2026-04-07"
+        const versionMatch = tLine.match(/^##\s*\[?v?([\d\.]+)\]?(?:\s*-\s*(.*))?/i);
+
+        if (versionMatch) {
+          // Speichere die vorherige Sektion, bevor wir eine neue beginnen
+          if (currentLog && currentLog.changes.length > 0) {
+            logs.push(currentLog);
+          }
+
+          // Versuche, das Datum hübsch zu formatieren (z.B. "2026-04-07" -> "April 2026")
+          let dateStr = versionMatch[2] || '';
+          try {
+            const d = new Date(dateStr);
+            if (!isNaN(d.getTime())) {
+              dateStr = d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+            }
+          } catch { }
+
+          currentLog = {
+            version: versionMatch[1],
+            date: dateStr,
+            changes: []
+          };
+        }
+        // Wenn wir in einer Sektion sind
+        else if (currentLog) {
+          // 1. Aufzählungspunkte (* oder -)
+          if (tLine.startsWith('* ') || tLine.startsWith('- ')) {
+            let changeText = tLine.substring(2).trim();
+            // Markdown "**" Fettdruck sauber entfernen
+            changeText = changeText.replace(/\*\*/g, '');
+            currentLog.changes.push(changeText);
+          }
+          // 2. Unter-Überschriften (z.B. **🐛 Bugfixes** oder ### 🔄 Auto-Update)
+          else if (tLine.startsWith('**') || tLine.startsWith('###')) {
+            let headerText = tLine.replace(/\*/g, '').replace(/#/g, '').trim();
+            if (headerText) {
+              currentLog.changes.push(`[HEADER]${headerText}`);
+            }
+          }
+          // 3. Normaler Text (z.B. der Einleitungstext eines Updates)
+          else if (!tLine.startsWith('#')) {
+            currentLog.changes.push(`[TEXT]${tLine}`);
+          }
+        }
+      }
+
+      // Letzte Sektion am Ende hinzufügen
+      if (currentLog && currentLog.changes.length > 0) {
+        logs.push(currentLog);
+      }
+
+      return logs;
+    } catch (e) {
+      console.error("Fehler beim automatischen Parsen des Changelogs:", e);
+      return [];
+    }
+  }, []);
 
   // Load plugins when switching to plugins category
   useEffect(() => {
@@ -692,33 +768,6 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
       onUpdateSetting('plugins', 'enabled', newEnabled);
     };
 
-    // Plugin info section
-    const PluginInfo = () => (
-      <div className="plugin-info-section">
-        <div className="plugin-info-header">
-          <Puzzle size={20} />
-          <div>
-            <h3>Plugins</h3>
-            <p>Erweitere Windows Bar mit mächtigen Plugins</p>
-          </div>
-          <a 
-            href="https://github.com/JackyWein/Windows-Bar/wiki/Plugins" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="plugin-info-link"
-          >
-            <ExternalLink size={14} />
-            Dokumentation
-          </a>
-        </div>
-        <p className="plugin-info-desc">
-          Plugins können Befehle hinzufügen, Suchprovider für Ergebnisse liefern,
-          und vie-Hooks für verschiedene Events defin.
-          Erstelle einen Ordner mit einer <code>manifest.json</code> Datei und installiere ihn über die Einstellungen.
-        </p>
-      </div>
-    );
-
     return (
       <div className="settings-section">
         {/* Header with info */}
@@ -752,16 +801,16 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
           {/* Plugin Cards */}
           <div className="plugin-grid">
             {plugins.map(plugin => (
-              <div 
-                key={plugin.id} 
+              <div
+                key={plugin.id}
                 className={`plugin-card ${plugin.enabled ? 'enabled' : 'disabled'}`}
               >
                 {/* Plugin Card Header */}
                 <div className="plugin-card-header">
                   <div className="plugin-icon-wrapper">
                     <div className="plugin-icon">
-                              {plugin.name.charAt(0).toUpperCase()}
-                            </div>
+                      {plugin.name.charAt(0).toUpperCase()}
+                    </div>
                   </div>
                   <div className="plugin-info">
                     <div className="plugin-name-row">
@@ -1110,73 +1159,73 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   // CHANGELOG
   // ========================
   function renderChangelog() {
-    const changelogs = [
-      {
-        version: '1.0.3',
-        date: 'April 2026',
-        changes: [
-          'Schriftgröße jetzt als Slider mit Live-Vorschau',
-          'Changelog-Sektion in den Einstellungen hinzugefügt',
-          'Theme-Farben werden jetzt konsistent angewendet (inkl. Wetter-Karte)',
-          'Hintergrundunschärfe und Unschärfe-Stärke funktionieren jetzt korrekt',
-          'Kompaktmodus blendet jetzt auch Shortcuts aus',
-          'Plugin-System Infrastruktur verbessert',
-        ],
-      },
-      {
-        version: '1.0.2',
-        date: 'März 2026',
-        changes: [
-          'Neue Themes: Nord, Dracula, Catppuccin Mocha',
-          'Wetter-Karte mit 7-Tage-Vorhersage',
-          'Verbesserte Suchergebnisse mit Icons',
-          'Tastenkürzel können jetzt angepasst werden',
-          'Performance-Verbesserungen bei der Indizierung',
-        ],
-      },
-      {
-        version: '1.0.1',
-        date: 'Februar 2026',
-        changes: [
-          'KI-Chat Integration (Gemini)',
-          'Zwischenablage-Verlauf',
-          'Notizen-Funktion',
-          'Web-Suche Integration',
-          'Automatischer Update-Check',
-        ],
-      },
-      {
-        version: '1.0.0',
-        date: 'Januar 2026',
-        changes: [
-          'Erste Version von Windows Bar',
-          'Schnelle App- und Dateisuche',
-          'Befehlssystem mit /calc, /wetter, etc.',
-          'Theme-Unterstützung',
-          'System-Tray Integration',
-        ],
-      },
-    ];
-
     return (
-      <div className="settings-section">
+      <div className="settings-section" style={{ paddingBottom: '80px' }}>
         <h2 className="settings-title">Changelog</h2>
         <div className="settings-group changelog-container">
-          {changelogs.map((entry, idx) => (
-            <div key={entry.version} className={`changelog-entry ${idx === 0 ? 'latest' : ''}`}>
-              <div className="changelog-header">
+          {parsedChangelogs.length > 0 ? parsedChangelogs.map((entry, idx) => (
+            <div key={entry.version} className={`changelog-entry ${idx === 0 ? 'latest' : ''}`} style={{ marginBottom: '24px' }}>
+              <div className="changelog-header" style={{ marginBottom: '12px' }}>
                 <span className="changelog-version">v{entry.version}</span>
                 <span className="changelog-date">{entry.date}</span>
                 {idx === 0 && <span className="changelog-badge">Neueste</span>}
               </div>
-              <ul className="changelog-list">
-                {entry.changes.map((change, i) => (
-                  <li key={i}>{change}</li>
-                ))}
-              </ul>
+              <div className="changelog-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {entry.changes.map((change, i) => {
+                  if (change.startsWith('[HEADER]')) {
+                    return <div key={i} className="changelog-subheading">{change.replace('[HEADER]', '')}</div>;
+                  }
+                  if (change.startsWith('[TEXT]')) {
+                    return <div key={i} className="changelog-text">{change.replace('[TEXT]', '')}</div>;
+                  }
+                  return (
+                    <div key={i} className="changelog-item">
+                      <span className="changelog-bullet">•</span>
+                      <span className="changelog-item-text">{change}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          ))}
+          )) : (
+            <p style={{ padding: 20, color: 'var(--text-muted)' }}>Keine Changelogs gefunden.</p>
+          )}
         </div>
+
+        {/* Spezifisches CSS für das bereinigte Changelog Layout */}
+        <style>{`
+          .changelog-subheading {
+            font-weight: 600;
+            color: var(--text);
+            margin-top: 16px;
+            margin-bottom: 4px;
+            font-size: 14px;
+          }
+          .changelog-text {
+            color: var(--text-muted);
+            margin-top: 8px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+          }
+          .changelog-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 6px;
+            line-height: 1.4;
+            color: var(--text-muted);
+            font-size: 13px;
+          }
+          .changelog-bullet {
+            color: var(--accent);
+            margin-right: 8px;
+            font-size: 16px;
+            line-height: 1;
+          }
+          .changelog-item-text {
+            flex: 1;
+          }
+        `}</style>
       </div>
     );
   }
@@ -1214,7 +1263,7 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
           <div className="about-card">
             <div className="about-icon"><Monitor size={48} /></div>
             <h3>Windows Bar</h3>
-            <p className="about-version">Version 1.0.3</p>
+            <p className="about-version">Version 1.0.6</p>
             <p className="about-desc">
               Ein schneller und eleganter App-Launcher für Windows mit
               integrierter KI, Wetter-Anzeige und vielen nützlichen Befehlen.
@@ -1233,7 +1282,7 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
               <span className="settings-item-title">Nach Updates suchen</span>
               <span className="settings-item-desc">Prüfe auf neue Versionen</span>
             </div>
-            <button 
+            <button
               className={`update-check-btn ${updateChecking ? 'checking' : ''}`}
               onClick={handleCheckUpdate}
               disabled={updateChecking}
