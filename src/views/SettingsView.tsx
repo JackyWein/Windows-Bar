@@ -3,7 +3,7 @@ import {
   ArrowLeft, Palette, Lock, Zap, Info, Check,
   Monitor, Globe, Keyboard, SlidersHorizontal,
   Search, Terminal, RotateCcw, Download, Puzzle,
-  FolderOpen, Trash2,
+  FolderOpen, Trash2, RefreshCw, History,
 } from 'lucide-react';
 import type { AppSettings } from '../types';
 import { builtinThemes } from '../core/settings/themes';
@@ -32,12 +32,14 @@ const accentColors = [
 const settingsCategories = [
   { id: 'themes', label: 'Themes', icon: Palette },
   { id: 'appearance', label: 'Aussehen', icon: SlidersHorizontal },
+  { id: 'system', label: 'System', icon: Monitor },
   { id: 'search', label: 'Suche', icon: Search },
   { id: 'commands', label: 'Befehle', icon: Terminal },
   { id: 'shortcuts', label: 'Tastenkürzel', icon: Keyboard },
   { id: 'features', label: 'Funktionen', icon: Zap },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
   { id: 'privacy', label: 'Datenschutz', icon: Lock },
+  { id: 'changelog', label: 'Changelog', icon: History },
   { id: 'about', label: 'Über', icon: Info },
 ];
 
@@ -53,6 +55,15 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   const [plugins, setPlugins] = useState<Array<{ id: string; name: string; version: string; description: string; author: string; enabled: boolean }>>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [confirmDialog, confirm] = useConfirm();
+  
+  // Update check state
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateResult, setUpdateResult] = useState<{
+    available: boolean;
+    currentVersion?: string;
+    latestVersion?: string;
+    error?: string;
+  } | null>(null);
 
   // Update setting helper for nested objects
   const updateAppearance = (key: string, value: unknown) => onUpdateSetting('appearance', key, value);
@@ -161,12 +172,14 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
           <div className="settings-content">
             {activeCategory === 'themes' && renderThemes()}
             {activeCategory === 'appearance' && renderAppearance()}
+            {activeCategory === 'system' && renderSystem()}
             {activeCategory === 'search' && renderSearch()}
             {activeCategory === 'commands' && renderCommands()}
             {activeCategory === 'shortcuts' && renderShortcuts()}
             {activeCategory === 'features' && renderFeatures()}
             {activeCategory === 'plugins' && renderPlugins()}
             {activeCategory === 'privacy' && renderPrivacy()}
+            {activeCategory === 'changelog' && renderChangelog()}
             {activeCategory === 'about' && renderAbout()}
           </div>
         </div>
@@ -252,20 +265,17 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
       <div className="settings-section">
         <h2 className="settings-title">Aussehen</h2>
         <div className="settings-group">
-          <div className="settings-item">
+          <div className="settings-item slider-item">
             <div className="settings-item-info">
               <span className="settings-item-title">Schriftgröße</span>
-              <span className="settings-item-desc">Passe die Textgröße an</span>
+              <span className="settings-item-desc">Textgröße: {settings.appearance.fontSize}px</span>
             </div>
-            <select
-              className="settings-select"
+            <input
+              type="range" className="settings-slider"
               value={settings.appearance.fontSize}
-              onChange={e => updateAppearance('fontSize', e.target.value)}
-            >
-              <option value="small">Klein</option>
-              <option value="medium">Mittel</option>
-              <option value="large">Groß</option>
-            </select>
+              onChange={e => updateAppearance('fontSize', parseInt(e.target.value))}
+              min={10} max={24}
+            />
           </div>
 
           <div className="settings-item">
@@ -373,6 +383,71 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
               <span className="settings-item-desc">Alle Einstellungen zurücksetzen</span>
             </div>
             <button className="settings-btn" onClick={onReset}>Zurücksetzen</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================
+  // SYSTEM
+  // ========================
+  function renderSystem() {
+    const updateSystem = (key: string, value: unknown) => {
+      onUpdateSetting('system', key, value);
+      // Also notify main process about the change
+      if (window.electronAPI?.updateSystemSettings) {
+        window.electronAPI.updateSystemSettings({ [key]: value });
+      }
+    };
+
+    return (
+      <div className="settings-section">
+        <h2 className="settings-title">System</h2>
+        <div className="settings-group">
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Automatisch starten</span>
+              <span className="settings-item-desc">Windows Bar beim Login starten</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={settings.system.autoStart}
+                onChange={e => updateSystem('autoStart', e.target.checked)}
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Immer im Vordergrund</span>
+              <span className="settings-item-desc">Bar bleibt über anderen Fenstern</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={settings.system.alwaysOnTop}
+                onChange={e => updateSystem('alwaysOnTop', e.target.checked)}
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Über Vollbild-Apps</span>
+              <span className="settings-item-desc">Bar erscheint über Spielen und Vollbild-Apps (wie Windows Startmenü)</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={settings.system.overlayFullscreen}
+                onChange={e => updateSystem('overlayFullscreen', e.target.checked)}
+              />
+              <span className="toggle-slider" />
+            </label>
           </div>
         </div>
       </div>
@@ -839,9 +914,103 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   }
 
   // ========================
+  // CHANGELOG
+  // ========================
+  function renderChangelog() {
+    const changelogs = [
+      {
+        version: '1.0.3',
+        date: 'April 2026',
+        changes: [
+          'Schriftgröße jetzt als Slider mit Live-Vorschau',
+          'Changelog-Sektion in den Einstellungen hinzugefügt',
+          'Theme-Farben werden jetzt konsistent angewendet (inkl. Wetter-Karte)',
+          'Hintergrundunschärfe und Unschärfe-Stärke funktionieren jetzt korrekt',
+          'Kompaktmodus blendet jetzt auch Shortcuts aus',
+          'Plugin-System Infrastruktur verbessert',
+        ],
+      },
+      {
+        version: '1.0.2',
+        date: 'März 2026',
+        changes: [
+          'Neue Themes: Nord, Dracula, Catppuccin Mocha',
+          'Wetter-Karte mit 7-Tage-Vorhersage',
+          'Verbesserte Suchergebnisse mit Icons',
+          'Tastenkürzel können jetzt angepasst werden',
+          'Performance-Verbesserungen bei der Indizierung',
+        ],
+      },
+      {
+        version: '1.0.1',
+        date: 'Februar 2026',
+        changes: [
+          'KI-Chat Integration (Gemini)',
+          'Zwischenablage-Verlauf',
+          'Notizen-Funktion',
+          'Web-Suche Integration',
+          'Automatischer Update-Check',
+        ],
+      },
+      {
+        version: '1.0.0',
+        date: 'Januar 2026',
+        changes: [
+          'Erste Version von Windows Bar',
+          'Schnelle App- und Dateisuche',
+          'Befehlssystem mit /calc, /wetter, etc.',
+          'Theme-Unterstützung',
+          'System-Tray Integration',
+        ],
+      },
+    ];
+
+    return (
+      <div className="settings-section">
+        <h2 className="settings-title">Changelog</h2>
+        <div className="settings-group changelog-container">
+          {changelogs.map((entry, idx) => (
+            <div key={entry.version} className={`changelog-entry ${idx === 0 ? 'latest' : ''}`}>
+              <div className="changelog-header">
+                <span className="changelog-version">v{entry.version}</span>
+                <span className="changelog-date">{entry.date}</span>
+                {idx === 0 && <span className="changelog-badge">Neueste</span>}
+              </div>
+              <ul className="changelog-list">
+                {entry.changes.map((change, i) => (
+                  <li key={i}>{change}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ========================
   // ABOUT
   // ========================
   function renderAbout() {
+    const handleCheckUpdate = async () => {
+      setUpdateChecking(true);
+      setUpdateResult(null);
+      try {
+        const result = await window.electronAPI.checkForUpdates();
+        setUpdateResult(result);
+      } catch (e) {
+        setUpdateResult({ available: false, error: 'Fehler beim Prüfen auf Updates' });
+      } finally {
+        setUpdateChecking(false);
+      }
+    };
+
+    const handleInstallUpdate = () => {
+      if (window.electronAPI?.installUpdate) {
+        window.electronAPI.installUpdate();
+      }
+    };
+
     return (
       <div className="settings-section">
         <h2 className="settings-title">Über Windows Bar</h2>
@@ -849,18 +1018,58 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
           <div className="about-card">
             <div className="about-icon"><Monitor size={48} /></div>
             <h3>Windows Bar</h3>
-            <p className="about-version">Version 2.0.0</p>
+            <p className="about-version">Version 1.0.3</p>
             <p className="about-desc">
               Ein schneller und eleganter App-Launcher für Windows mit
               integrierter KI, Wetter-Anzeige und vielen nützlichen Befehlen.
             </p>
             <div className="about-links">
-              <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="about-link">
+              <a href="https://github.com/JackyWein/Windows-Bar" target="_blank" rel="noopener noreferrer" className="about-link">
                 <Globe size={14} />
                 GitHub
               </a>
             </div>
           </div>
+
+          {/* Update Check Section */}
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Nach Updates suchen</span>
+              <span className="settings-item-desc">Prüfe auf neue Versionen</span>
+            </div>
+            <button 
+              className={`update-check-btn ${updateChecking ? 'checking' : ''}`}
+              onClick={handleCheckUpdate}
+              disabled={updateChecking}
+            >
+              <RefreshCw size={16} />
+              {updateChecking ? 'Prüfe...' : 'Jetzt prüfen'}
+            </button>
+          </div>
+
+          {updateResult && (
+            <div className={`update-status ${updateResult.available ? 'available' : updateResult.error ? 'error' : 'not-available'}`}>
+              {updateResult.available ? (
+                <>
+                  <span className="update-status-text">✨ Update verfügbar!</span>
+                  <span className="update-status-version">
+                    Version {updateResult.latestVersion} (aktuell: {updateResult.currentVersion})
+                  </span>
+                  <button className="update-install-btn" onClick={handleInstallUpdate}>
+                    <Download size={14} />
+                    Jetzt installieren
+                  </button>
+                </>
+              ) : updateResult.error ? (
+                <span className="update-status-text">⚠️ {updateResult.error}</span>
+              ) : (
+                <>
+                  <span className="update-status-text">✅ Kein Update verfügbar</span>
+                  <span className="update-status-version">Du nutzt Version {updateResult.currentVersion}</span>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="settings-item">
             <div className="settings-item-info">

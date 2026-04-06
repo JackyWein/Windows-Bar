@@ -36,6 +36,7 @@ function applyAllAppearance(settings: AppSettings, theme: Theme): void {
 
   // Accent (user override takes priority over theme)
   root.style.setProperty("--accent", settings.appearance.accentColor);
+  root.style.setProperty("--accent-rgb", hexToRgb(settings.appearance.accentColor));
   root.style.setProperty(
     "--item-selected",
     `rgba(${hexToRgb(settings.appearance.accentColor)}, 0.15)`,
@@ -56,20 +57,21 @@ function applyAllAppearance(settings: AppSettings, theme: Theme): void {
   root.style.setProperty("--radius", `${settings.appearance.borderRadius}px`);
 
   // Blur - from settings (user controls amount + enabled)
-  root.style.setProperty(
-    "--blur-amount",
-    `${settings.appearance.blur.enabled ? settings.appearance.blur.amount : 0}px`,
-  );
+  const blurAmount = settings.appearance.blur.enabled ? settings.appearance.blur.amount : 0;
+  root.style.setProperty("--blur-amount", `${blurAmount}px`);
+  root.style.setProperty("--blur-enabled", settings.appearance.blur.enabled ? "1" : "0");
+  
+  // Apply no-blur class via CSS - more reliable than DOM manipulation
+  if (settings.appearance.blur.enabled && blurAmount > 0) {
+    root.classList.remove('no-blur');
+  } else {
+    root.classList.add('no-blur');
+  }
 
-  // Font size - from settings
-  const fontSizes: Record<string, string> = {
-    small: "14px",
-    medium: "16px",
-    large: "18px",
-  };
+  // Font size - from settings (now in pixels)
   root.style.setProperty(
     "--font-size-base",
-    fontSizes[settings.appearance.fontSize] || "16px",
+    `${settings.appearance.fontSize}px`,
   );
 
   // Font family - from settings, fallback to theme
@@ -105,16 +107,31 @@ function applyAllAppearance(settings: AppSettings, theme: Theme): void {
   // Compact mode - reduced padding/gaps
   root.style.setProperty(
     "--compact-padding",
-    settings.appearance.compactMode ? "6px 10px" : "10px 14px",
+    settings.appearance.compactMode ? "4px 8px" : "10px 14px",
   );
   root.style.setProperty(
     "--compact-gap",
-    settings.appearance.compactMode ? "1px" : "2px",
+    settings.appearance.compactMode ? "0px" : "2px",
   );
   root.style.setProperty(
     "--compact-font-size",
-    settings.appearance.compactMode ? "0.9em" : "1em",
+    settings.appearance.compactMode ? "0.85em" : "1em",
   );
+  root.style.setProperty(
+    "--compact-item-height",
+    settings.appearance.compactMode ? "32px" : "44px",
+  );
+  root.style.setProperty(
+    "--compact-icon-size",
+    settings.appearance.compactMode ? "18px" : "24px",
+  );
+  root.style.setProperty(
+    "--compact-search-padding",
+    settings.appearance.compactMode ? "10px 14px" : "14px 18px",
+  );
+
+  // Font size from settings
+  root.style.setProperty("--font-size-base", `${settings.appearance.fontSize}px`);
 }
 
 function hexToRgb(hex: string): string {

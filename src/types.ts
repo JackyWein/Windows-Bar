@@ -102,6 +102,30 @@ export interface PluginManifest {
   commands?: string[];
   settings?: string[];
   minAppVersion?: string;
+  // Plugin UI capabilities
+  ui?: {
+    // Support for compact mode - plugin can render differently when compact
+    supportsCompactMode?: boolean;
+    // Height in normal mode (pixels)
+    normalHeight?: number;
+    // Height in compact mode (pixels)
+    compactHeight?: number;
+    // Whether plugin wants to use theme colors
+    useThemeColors?: boolean;
+    // Icon badge support for compact mode
+    compactBadge?: boolean;
+  };
+  // Plugin hooks - functions that get called by the app
+  hooks?: {
+    // Called when compact mode changes
+    onCompactModeChange?: boolean;
+    // Called when theme changes
+    onThemeChange?: boolean;
+    // Called when accent color changes
+    onAccentColorChange?: boolean;
+    // Called when settings change
+    onSettingsChange?: boolean;
+  };
 }
 
 export interface PluginInfo {
@@ -112,6 +136,28 @@ export interface PluginInfo {
   author: string;
   enabled: boolean;
   installed: boolean;
+}
+
+// Plugin context passed to plugin render functions
+export interface PluginContext {
+  isCompactMode: boolean;
+  theme: {
+    colors: ThemeColors;
+    accentColor: string;
+    borderRadius: number;
+  };
+  settings: AppSettings;
+  api: typeof window.electronAPI;
+}
+
+// Plugin render result for UI components
+export interface PluginRenderResult {
+  // Main content to render
+  content: React.ReactNode;
+  // Optional badge content for compact mode
+  badge?: React.ReactNode;
+  // Height override
+  height?: number;
 }
 
 // ========================
@@ -136,7 +182,7 @@ export interface AppSettings {
   appearance: {
     theme: string;
     accentColor: string;
-    fontSize: 'small' | 'medium' | 'large';
+    fontSize: number; // Font size in pixels (10-24)
     fontFamily: string;
     animations: boolean;
     blur: { enabled: boolean; amount: number };
@@ -146,6 +192,11 @@ export interface AppSettings {
     windowHeight: number;
     showScrollbar: boolean;
     compactMode: boolean;
+  };
+  system: {
+    autoStart: boolean;
+    alwaysOnTop: boolean;
+    overlayFullscreen: boolean;
   };
   search: {
     maxResults: number;
@@ -179,7 +230,7 @@ export const defaultSettings: AppSettings = {
   appearance: {
     theme: 'dark-default',
     accentColor: '#7c5cfc',
-    fontSize: 'medium',
+    fontSize: 16,
     fontFamily: "'Inter', 'Segoe UI Variable', system-ui, sans-serif",
     animations: true,
     blur: { enabled: true, amount: 40 },
@@ -189,6 +240,11 @@ export const defaultSettings: AppSettings = {
     windowHeight: 600,
     showScrollbar: true,
     compactMode: false,
+  },
+  system: {
+    autoStart: true,
+    alwaysOnTop: true,
+    overlayFullscreen: false,
   },
   search: {
     maxResults: 20,

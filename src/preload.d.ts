@@ -48,6 +48,10 @@ interface ElectronAPI {
   storeCredential: (key: string, value: string) => Promise<boolean>;
   getCredential: (key: string) => Promise<string | null>;
   deleteCredential: (key: string) => Promise<boolean>;
+
+  // System Settings
+  getSystemSettings: () => Promise<{ autoStart: boolean; alwaysOnTop: boolean; overlayFullscreen: boolean }>;
+  updateSystemSettings: (settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) => void;
 }
 
 interface PluginAPI {

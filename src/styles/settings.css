@@ -23,13 +23,13 @@
 .settings-nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.5rem;
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
   transition: all var(--transition-speed) ease;
   font-family: inherit;
@@ -83,9 +83,9 @@
 }
 
 .settings-title {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 600;
-  margin-bottom: 20px;
+  margin-bottom: 1.25rem;
   color: var(--text);
 }
 
@@ -127,13 +127,13 @@
 }
 
 .settings-item-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--text);
 }
 
 .settings-item-desc {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-dim);
 }
 
@@ -564,4 +564,185 @@
   width: 850px;
   height: 700px;
   max-height: 700px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Ensure settings sections can scroll properly */
+.settings-section {
+  animation: fadeIn 0.2s ease;
+  min-height: fit-content;
+}
+
+/* Update check styling */
+.update-check-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, rgba(124, 92, 252, 0.2) 0%, rgba(56, 189, 248, 0.2) 100%);
+  border: 1px solid rgba(124, 92, 252, 0.3);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  font-family: inherit;
+}
+
+.update-check-btn:hover {
+  background: linear-gradient(135deg, rgba(124, 92, 252, 0.3) 0%, rgba(56, 189, 248, 0.3) 100%);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.update-check-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.update-check-btn.checking {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.update-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-top: 12px;
+}
+
+.update-status.available {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.update-status.not-available {
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+.update-status.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.update-status-text {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.update-status-version {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.update-install-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(74, 222, 128, 0.2);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  border-radius: 8px;
+  color: #4ade80;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  font-family: inherit;
+  margin-top: 8px;
+}
+
+.update-install-btn:hover {
+  background: rgba(74, 222, 128, 0.3);
+  border-color: #4ade80;
+}
+
+/* ========================
+   CHANGELOG
+   ======================== */
+
+.changelog-container {
+  gap: 16px;
+}
+
+.changelog-entry {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all var(--transition-speed) ease;
+}
+
+.changelog-entry:hover {
+  background: var(--item-hover);
+}
+
+.changelog-entry.latest {
+  border-color: var(--accent);
+  background: rgba(124, 92, 252, 0.05);
+}
+
+.changelog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.changelog-version {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.changelog-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.changelog-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  background: var(--accent);
+  color: white;
+  border-radius: 6px;
+  margin-left: auto;
+}
+
+.changelog-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.changelog-list li {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding-left: 16px;
+  position: relative;
+  line-height: 1.4;
+}
+
+.changelog-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
 }

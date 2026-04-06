@@ -651,6 +651,13 @@ autoUpdater.on('error', (error) => {
 let mainWindow: BrowserWindow | null = null;
 const isDev = !app.isPackaged;
 
+// Settings state (synced with renderer)
+let appSettings = {
+  autoStart: true,
+  alwaysOnTop: true,
+  overlayFullscreen: false,
+};
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 750,
@@ -661,6 +668,7 @@ function createWindow() {
     skipTaskbar: true,
     resizable: false,
     show: false,
+    hasShadow: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -669,6 +677,11 @@ function createWindow() {
       webviewTag: true  // Enable <webview> for inline AI & web
     }
   });
+
+  // Set window to appear over fullscreen apps if overlayFullscreen is enabled
+  if (appSettings.overlayFullscreen) {
+    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+  }
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -1552,5 +1565,111 @@ ipcMain.on('ai:abort', () => {
   if (activeAiProcess) {
     activeAiProcess.kill();
     activeAiProcess = null;
+  }
+});
+
+// ========================
+// SYSTEM SETTINGS IPC
+// ========================
+
+// Get current system settings
+ipcMain.handle('get-system-settings', () => {
+  return { ...appSettings };
+});
+
+// ========================
+// UPDATE CHECK IPC
+// ========================
+
+// Manual update check with dialog result
+ipcMain.handle('check-for-updates', async () => {
+  if (isDev) {
+    console.log('[WindowsBar] Skipping update check in dev mode');
+    return { available: false, currentVersion: app.getVersion(), error: 'Dev mode' };
+  }
+
+  try {
+    console.log('[WindowsBar] Manual update check triggered');
+    const result = await autoUpdater.checkForUpdates();
+    
+    if (result && result.updateInfo) {
+      const currentVersion = app.getVersion();
+      const latestVersion = result.updateInfo.version;
+      
+      if (result.updateInfo.version !== currentVersion) {
+        console.log(`[WindowsBar] Update available: ${latestVersion}`);
+        return {
+          available: true,
+          currentVersion,
+          latestVersion,
+          releaseNotes: result.updateInfo.releaseNotes,
+        };
+      } else {
+        console.log('[WindowsBar] No update available');
+        return { available: false, currentVersion };
+      }
+    }
+    
+    return { available: false, currentVersion: app.getVersion() };
+  } catch (error) {
+    console.error('[WindowsBar] Update check failed:', error);
+    return { 
+      available: false, 
+      currentVersion: app.getVersion(), 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+});
+
+// Install downloaded update immediately
+ipcMain.on('install-update', () => {
+  console.log('[WindowsBar] Quitting and installing update...');
+  autoUpdater.quitAndInstall();
+});
+
+// Update system settings from renderer
+ipcMain.on('update-system-settings', (_event, settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) => {
+  console.log('[WindowsBar] Updating system settings:', settings);
+
+  // Update auto-start
+  if (settings.autoStart !== undefined) {
+    appSettings.autoStart = settings.autoStart;
+    app.setLoginItemSettings({ openAtLogin: settings.autoStart, path: app.getPath('exe') });
+    console.log(`[WindowsBar] Auto-start ${settings.autoStart ? 'enabled' : 'disabled'}`);
+  }
+
+  // Update always-on-top
+  if (settings.alwaysOnTop !== undefined) {
+    appSettings.alwaysOnTop = settings.alwaysOnTop;
+    if (mainWindow) {
+      if (settings.alwaysOnTop) {
+        // If overlay mode is also enabled, use screen-saver level
+        if (appSettings.overlayFullscreen) {
+          mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+        } else {
+          mainWindow.setAlwaysOnTop(true, 'floating', 1);
+        }
+      } else {
+        mainWindow.setAlwaysOnTop(false);
+      }
+      console.log(`[WindowsBar] Always-on-top ${settings.alwaysOnTop ? 'enabled' : 'disabled'}`);
+    }
+  }
+
+  // Update overlay fullscreen mode
+  if (settings.overlayFullscreen !== undefined) {
+    appSettings.overlayFullscreen = settings.overlayFullscreen;
+    if (mainWindow) {
+      if (settings.overlayFullscreen) {
+        // 'screen-saver' level appears over fullscreen apps and games
+        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+      } else if (appSettings.alwaysOnTop) {
+        // Fall back to normal always-on-top if enabled
+        mainWindow.setAlwaysOnTop(true, 'floating', 1);
+      } else {
+        mainWindow.setAlwaysOnTop(false);
+      }
+      console.log(`[WindowsBar] Overlay fullscreen ${settings.overlayFullscreen ? 'enabled' : 'disabled'}`);
+    }
   }
 });

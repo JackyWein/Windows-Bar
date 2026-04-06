@@ -46,7 +46,7 @@
 }
 
 .chat-toolbar-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
@@ -157,7 +157,7 @@
 .message-bubble {
   padding: 10px 14px;
   border-radius: 14px;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
   word-break: break-word;
 }

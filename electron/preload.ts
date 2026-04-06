@@ -56,6 +56,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storeCredential: (key: string, value: string) => ipcRenderer.invoke('store-credential', key, value),
   getCredential: (key: string) => ipcRenderer.invoke('get-credential', key),
   deleteCredential: (key: string) => ipcRenderer.invoke('delete-credential', key),
+
+  // System Settings
+  getSystemSettings: () => ipcRenderer.invoke('get-system-settings'),
+  updateSystemSettings: (settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) =>
+    ipcRenderer.send('update-system-settings', settings),
+
+  // Update Check
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  installUpdate: () => ipcRenderer.send('install-update'),
 });
 
 // Plugin API bridge

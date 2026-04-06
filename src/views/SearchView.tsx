@@ -880,8 +880,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
 
         {loading && <div className="loading-bar" />}
 
-        {/* Quick Actions */}
-        {!query.trim() && (
+        {/* Quick Actions - Hidden in compact mode */}
+        {!query.trim() && !settings.appearance.compactMode && (
           <div className="quick-actions" ref={quickActionsRef}>
             {quickActions.map((qa, idx) => (
               <button
@@ -1111,6 +1111,10 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
     time: h.time,
   }));
 
+  // Get accent color from CSS variable for dynamic theming
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7c5cfc';
+  const accentRgb = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '124, 92, 252';
+
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const areaD = `${pathD} L ${points[points.length - 1]?.x || 0} ${graphHeight - padding} L ${padding} ${graphHeight - padding} Z`;
 
@@ -1167,19 +1171,19 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
           <svg className="weather-graph" viewBox={`0 0 ${graphWidth} ${graphHeight}`}>
             <defs>
               <linearGradient id="tempGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(56, 189, 248, 0.4)" />
-                <stop offset="100%" stopColor="rgba(56, 189, 248, 0.05)" />
+                <stop offset="0%" stopColor={`rgba(${accentRgb}, 0.4)`} />
+                <stop offset="100%" stopColor={`rgba(${accentRgb}, 0.05)`} />
               </linearGradient>
             </defs>
             {[0, 1, 2].map(i => (
-              <line key={i} x1={padding} y1={padding + i * (graphHeight - padding * 2) / 2} x2={graphWidth - padding} y2={padding + i * (graphHeight - padding * 2) / 2} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+              <line key={i} x1={padding} y1={padding + i * (graphHeight - padding * 2) / 2} x2={graphWidth - padding} y2={graphHeight - padding} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
             ))}
             <path d={areaD} fill="url(#tempGradient)" />
-            <path d={pathD} fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={pathD} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             {points.map((p, i) => (
               <g key={i}>
-                <circle cx={p.x} cy={p.y} r="3" fill="#38bdf8" />
-                <circle cx={p.x} cy={p.y} r="5" fill="rgba(56, 189, 248, 0.3)" />
+                <circle cx={p.x} cy={p.y} r="3" fill={accentColor} />
+                <circle cx={p.x} cy={p.y} r="5" fill={`rgba(${accentRgb}, 0.3)`} />
               </g>
             ))}
           </svg>
