@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AISettings, ChatSession, ChatMessage, AIRequest } from '../core/ai';
 import { ChatEngine } from '../core/ai/chat';
 import { sessionStore } from '../core/ai/sessions';
-import { providerRegistry } from '../core/ai/providers';
 import { ChatToolbar } from './ai/ChatToolbar';
 import { ChatMessages } from './ai/ChatMessages';
 import { ChatInput, focusChatInput } from './ai/ChatInput';
@@ -10,7 +9,6 @@ import { HistoryModal } from './ai/HistoryModal';
 import { ProviderModal } from './ai/ProviderModal';
 import { OnboardingCard } from './ai/OnboardingCard';
 import { useConfirm } from '../components/ConfirmDialog';
-import type { ConfirmOptions } from '../components/ConfirmDialog';
 import '../styles/ai.css';
 
 interface AiViewProps {
@@ -172,7 +170,7 @@ export function AiView({ settings, onSettingsChange, onBack }: AiViewProps) {
       setStreamingContent('');
 
       try {
-        await window.electronAPI.aiChat(request as AIRequest);
+        await window.electronAPI.aiChat(request as Parameters<typeof window.electronAPI.aiChat>[0]);
       } catch (err) {
         // Error will be handled by the IPC error listener
         setChatState('error');

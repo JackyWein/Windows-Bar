@@ -25,7 +25,7 @@ export const ollamaProvider: AIProvider = {
   buildRequest(
     messages: readonly ChatMessage[],
     modelId: string,
-    config: ProviderConfig,
+    _config: ProviderConfig,
   ): AIRequest {
     const payloadMessages = messages.map((msg) => ({
       role: msg.role,

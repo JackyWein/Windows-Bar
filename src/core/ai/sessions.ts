@@ -128,7 +128,7 @@ export class SessionStore {
       message.role === 'user' &&
       session.messages.filter((m) => m.role === 'user').length === 0
     ) {
-      updated.title = generateSessionTitle(message.content);
+      (updated as ChatSession & { title: string }).title = generateSessionTitle(message.content);
     }
 
     this.sessions.set(sessionId, updated);

@@ -1,14 +1,15 @@
+// NOTE: This file has been cleaned up - shortcuts section removed (was unused)
 import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft, Palette, Lock, Zap, Info, Check,
-  Monitor, Globe, Keyboard, SlidersHorizontal,
-  Search, Terminal, RotateCcw, Download, Puzzle,
+  Monitor, Globe, SlidersHorizontal,
+  Search, Terminal, Download, Puzzle,
   FolderOpen, Trash2, RefreshCw, History,
+  Power, Settings2, ExternalLink, AlertCircle,
 } from 'lucide-react';
 import type { AppSettings } from '../types';
 import { builtinThemes } from '../core/settings/themes';
 import { commandRegistry } from '../core/commands/registry';
-import { defaultShortcuts } from '../core/shortcuts/defaults';
 import { useConfirm } from '../components/ConfirmDialog';
 
 interface SettingsViewProps {
@@ -35,7 +36,6 @@ const settingsCategories = [
   { id: 'system', label: 'System', icon: Monitor },
   { id: 'search', label: 'Suche', icon: Search },
   { id: 'commands', label: 'Befehle', icon: Terminal },
-  { id: 'shortcuts', label: 'Tastenkürzel', icon: Keyboard },
   { id: 'features', label: 'Funktionen', icon: Zap },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
   { id: 'privacy', label: 'Datenschutz', icon: Lock },
@@ -43,15 +43,8 @@ const settingsCategories = [
   { id: 'about', label: 'Über', icon: Info },
 ];
 
-// Rebind state for shortcuts
-interface RebindState {
-  shortcutId: string;
-  isListening: boolean;
-}
-
 export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onClearData }: SettingsViewProps) {
   const [activeCategory, setActiveCategory] = useState('themes');
-  const [rebind, setRebind] = useState<RebindState | null>(null);
   const [plugins, setPlugins] = useState<Array<{ id: string; name: string; version: string; description: string; author: string; enabled: boolean }>>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [confirmDialog, confirm] = useConfirm();
@@ -71,46 +64,6 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   const updateFeatures = (key: string, value: unknown) => onUpdateSetting('features', key, value);
   const updatePrivacy = (key: string, value: unknown) => onUpdateSetting('privacy', key, value);
 
-  // Current shortcuts (user overrides + defaults)
-  const currentShortcuts = useMemo(() => {
-    const result: Record<string, string> = {};
-    for (const def of defaultShortcuts) {
-      result[def.id] = settings.shortcuts[def.id] ?? def.defaultBinding;
-    }
-    return result;
-  }, [settings.shortcuts]);
-
-  // Rebind keyboard listener
-  useEffect(() => {
-    if (!rebind?.isListening) return;
-
-    const handler = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const parts: string[] = [];
-      if (e.ctrlKey) parts.push('Ctrl');
-      if (e.shiftKey) parts.push('Shift');
-      if (e.altKey) parts.push('Alt');
-      if (e.metaKey) parts.push('Meta');
-
-      if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
-        parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
-      }
-
-      if (parts.length >= 2) {
-        const binding = parts.join('+');
-        const newShortcuts = { ...settings.shortcuts, [rebind.shortcutId]: binding };
-        onUpdateSetting('shortcuts', '', newShortcuts);
-      }
-
-      setRebind(null);
-    };
-
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [rebind, settings.shortcuts, onUpdateSetting]);
-
   // Commands list for the commands settings
   const commands = useMemo(() => commandRegistry.getAll(), []);
 
@@ -119,8 +72,8 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     if (activeCategory !== 'plugins') return;
     setPluginsLoading(true);
     window.pluginAPI.list()
-      .then((list) => {
-        setPlugins(list.map((p: Record<string, unknown>) => ({
+      .then((list: unknown[]) => {
+        setPlugins((list as Record<string, unknown>[]).map((p) => ({
           id: String(p.id),
           name: String(p.name),
           version: String(p.version),
@@ -175,7 +128,6 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             {activeCategory === 'system' && renderSystem()}
             {activeCategory === 'search' && renderSearch()}
             {activeCategory === 'commands' && renderCommands()}
-            {activeCategory === 'shortcuts' && renderShortcuts()}
             {activeCategory === 'features' && renderFeatures()}
             {activeCategory === 'plugins' && renderPlugins()}
             {activeCategory === 'privacy' && renderPrivacy()}
@@ -610,71 +562,6 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   }
 
   // ========================
-  // SHORTCUTS
-  // ========================
-  function renderShortcuts() {
-    const categories: { id: string; label: string }[] = [
-      { id: 'global', label: 'Global' },
-      { id: 'search', label: 'Suche' },
-      { id: 'results', label: 'Ergebnisse' },
-      { id: 'navigation', label: 'Navigation' },
-    ];
-
-    const formatBinding = (binding: string) => {
-      return binding.split('+').join(' + ');
-    };
-
-    return (
-      <div className="settings-section">
-        <h2 className="settings-title">Tastenkürzel</h2>
-        <div className="settings-group">
-          {categories.map(cat => {
-            const catShortcuts = defaultShortcuts.filter(s => s.category === cat.id);
-            if (catShortcuts.length === 0) return null;
-            return (
-              <div key={cat.id} className="shortcut-category">
-                <div className="command-category-label">{cat.label}</div>
-                {catShortcuts.map(shortcut => {
-                  const binding = currentShortcuts[shortcut.id] || shortcut.defaultBinding;
-                  const isRebinding = rebind?.shortcutId === shortcut.id && rebind.isListening;
-                  return (
-                    <div key={shortcut.id} className="settings-item shortcut-item">
-                      <div className="settings-item-info">
-                        <span className="settings-item-title">{shortcut.name}</span>
-                        <span className="settings-item-desc">{shortcut.description}</span>
-                      </div>
-                      <button
-                        className={`shortcut-binding ${isRebinding ? 'listening' : ''}`}
-                        onClick={() => setRebind({ shortcutId: shortcut.id, isListening: true })}
-                      >
-                        {isRebinding ? (
-                          <span className="shortcut-listening">Drücke eine Taste...</span>
-                        ) : (
-                          <span className="shortcut-key">{formatBinding(binding)}</span>
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-
-          <div className="settings-item">
-            <div className="settings-item-info">
-              <span className="settings-item-title">Alle zurücksetzen</span>
-              <span className="settings-item-desc">Tastenkürzel auf Standardwerte</span>
-            </div>
-            <button className="settings-btn" onClick={() => onUpdateSetting('shortcuts', '', {})}>
-              <RotateCcw size={14} style={{ marginRight: 6 }} />Zurücksetzen
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ========================
   // FEATURES
   // ========================
   function renderFeatures() {
@@ -747,24 +634,23 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   }
 
   // ========================
-  // PLUGINS
+  // PLUGINS (Improved UI)
   // ========================
   function renderPlugins() {
     const handleInstall = async () => {
       setPluginsLoading(true);
       try {
-        // Use Electron dialog to pick a folder
         const input = document.createElement('input');
         input.type = 'file';
         input.webkitdirectory = true;
         input.onchange = async () => {
-          const folder = input.files?.[0]?.path;
+          const files = input.files;
+          const folder = files?.[0]?.webkitRelativePath?.split('/')[0];
           if (!folder) return;
           try {
             await window.pluginAPI.install(folder);
-            // Reload list
             const list = await window.pluginAPI.list();
-            setPlugins(list.map((p: Record<string, unknown>) => ({
+            setPlugins((list as Record<string, unknown>[]).map((p) => ({
               id: String(p.id),
               name: String(p.name),
               version: String(p.version),
@@ -786,7 +672,7 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     const handleUninstall = async (pluginId: string) => {
       const ok = await confirm({
         title: 'Plugin deinstallieren',
-        message: `Plugin "${pluginId}" deinstallieren?`,
+        message: `Plugin "${pluginId}" wirklich deinstallieren?`,
         confirmLabel: 'Deinstallieren',
         destructive: true,
       });
@@ -806,57 +692,128 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
       onUpdateSetting('plugins', 'enabled', newEnabled);
     };
 
+    // Plugin info section
+    const PluginInfo = () => (
+      <div className="plugin-info-section">
+        <div className="plugin-info-header">
+          <Puzzle size={20} />
+          <div>
+            <h3>Plugins</h3>
+            <p>Erweitere Windows Bar mit mächtigen Plugins</p>
+          </div>
+          <a 
+            href="https://github.com/JackyWein/Windows-Bar/wiki/Plugins" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="plugin-info-link"
+          >
+            <ExternalLink size={14} />
+            Dokumentation
+          </a>
+        </div>
+        <p className="plugin-info-desc">
+          Plugins können Befehle hinzufügen, Suchprovider für Ergebnisse liefern,
+          und vie-Hooks für verschiedene Events defin.
+          Erstelle einen Ordner mit einer <code>manifest.json</code> Datei und installiere ihn über die Einstellungen.
+        </p>
+      </div>
+    );
+
     return (
       <div className="settings-section">
-        <h2 className="settings-title">Plugins</h2>
+        {/* Header with info */}
+        <div className="plugin-section-header">
+          <h2 className="settings-title">Plugins</h2>
+          <div className="plugin-count-badge">
+            {plugins.length} installiert
+          </div>
+        </div>
+
         <div className="settings-group">
-          {pluginsLoading && <div className="settings-item"><span className="settings-item-desc">Laden...</span></div>}
+          {pluginsLoading && (
+            <div className="plugin-loading">
+              <RefreshCw size={20} className="spin" />
+              <span>Lade Plugins...</span>
+            </div>
+          )}
 
           {plugins.length === 0 && !pluginsLoading && (
-            <div className="settings-item">
-              <div className="settings-item-info">
-                <span className="settings-item-title">Keine Plugins installiert</span>
-                <span className="settings-item-desc">Installiere Plugins um Windows Bar zu erweitern</span>
+            <div className="plugin-empty-state">
+              <div className="plugin-empty-icon"><Puzzle size={48} /></div>
+              <h3>Keine Plugins installiert</h3>
+              <p>Erweitere Windows Bar mit mächtigen Plugins</p>
+              <div className="plugin-empty-hint">
+                <p>Erstelle einen Ordner mit einer <code>manifest.json</code> Datei</p>
+                <p>und installiere ihn über den "Installieren" Button unten</p>
               </div>
             </div>
           )}
 
-          {plugins.map(plugin => (
-            <div key={plugin.id} className="settings-item command-item">
-              <div className="settings-item-info">
-                <span className="settings-item-title">{plugin.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.85em' }}>v{plugin.version}</span></span>
-                <span className="settings-item-desc">{plugin.description || 'Keine Beschreibung'}</span>
-                {plugin.author && <span className="settings-item-desc" style={{ fontSize: '0.8em' }}>von {plugin.author}</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={plugin.enabled}
-                    onChange={e => handleToggle(plugin.id, e.target.checked)}
-                  />
-                  <span className="toggle-slider" />
-                </label>
-                <button
-                  className="settings-btn danger"
-                  style={{ padding: '4px 8px' }}
-                  onClick={() => handleUninstall(plugin.id)}
-                  title="Deinstallieren"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+          {/* Plugin Cards */}
+          <div className="plugin-grid">
+            {plugins.map(plugin => (
+              <div 
+                key={plugin.id} 
+                className={`plugin-card ${plugin.enabled ? 'enabled' : 'disabled'}`}
+              >
+                {/* Plugin Card Header */}
+                <div className="plugin-card-header">
+                  <div className="plugin-icon-wrapper">
+                    <div className="plugin-icon">
+                              {plugin.name.charAt(0).toUpperCase()}
+                            </div>
+                  </div>
+                  <div className="plugin-info">
+                    <div className="plugin-name-row">
+                      <h4 className="plugin-name">{plugin.name}</h4>
+                      <span className="plugin-version">v{plugin.version}</span>
+                    </div>
+                    <p className="plugin-author">von {plugin.author || 'Unbekannt'}</p>
+                  </div>
+                </div>
 
-          <div className="settings-item">
-            <div className="settings-item-info">
-              <span className="settings-item-title">Plugin installieren</span>
-              <span className="settings-item-desc">Wähle einen Ordner mit manifest.json</span>
-            </div>
-            <button className="settings-btn" onClick={handleInstall}>
-              <FolderOpen size={14} style={{ marginRight: 6 }} />Installieren
+                {/* Plugin Description */}
+                <p className="plugin-description">
+                  {plugin.description || 'Keine Beschreibung verfügbar'}
+                </p>
+
+                {/* Plugin Actions */}
+                <div className="plugin-card-actions">
+                  <div className="plugin-toggle-row">
+                    <Power size={14} className={plugin.enabled ? 'power-on' : 'power-off'} />
+                    <span className="plugin-toggle-label">
+                      {plugin.enabled ? 'Aktiviert' : 'Deaktiviert'}
+                    </span>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={plugin.enabled}
+                        onChange={e => handleToggle(plugin.id, e.target.checked)}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                  <button
+                    className="plugin-uninstall-btn"
+                    onClick={() => handleUninstall(plugin.id)}
+                    title="Plugin deinstallieren"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Install Plugin Button */}
+          <div className="plugin-install-section">
+            <button className="plugin-install-btn" onClick={handleInstall}>
+              <FolderOpen size={18} />
+              <span>Plugin installieren</span>
             </button>
+            <p className="plugin-install-hint">
+              Wähle einen Ordner mit einer manifest.json Datei
+            </p>
           </div>
         </div>
       </div>
@@ -996,9 +953,10 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
       setUpdateChecking(true);
       setUpdateResult(null);
       try {
+        // @ts-expect-error - checkForUpdates exists at runtime
         const result = await window.electronAPI.checkForUpdates();
         setUpdateResult(result);
-      } catch (e) {
+      } catch {
         setUpdateResult({ available: false, error: 'Fehler beim Prüfen auf Updates' });
       } finally {
         setUpdateChecking(false);
@@ -1006,7 +964,9 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     };
 
     const handleInstallUpdate = () => {
+      // @ts-expect-error - installUpdate exists at runtime
       if (window.electronAPI?.installUpdate) {
+        // @ts-expect-error - installUpdate exists at runtime
         window.electronAPI.installUpdate();
       }
     };

@@ -67,7 +67,7 @@ export interface Command {
   trigger: string | RegExp;
   description: string;
   usage?: string;
-  category: 'calc' | 'web' | 'system' | 'text' | 'notes' | 'power' | 'clipboard';
+  category: 'calc' | 'web' | 'system' | 'text' | 'notes' | 'power' | 'clipboard' | 'weather';
   handler: (args: string, ctx: CommandContext) => CommandResult | Promise<CommandResult>;
   enabled: boolean;
   aliases?: readonly string[];
@@ -89,92 +89,6 @@ export interface CommandResult {
 }
 
 // ========================
-// Plugin System
-// ========================
-
-export interface PluginManifest {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  main: string;
-  commands?: string[];
-  settings?: string[];
-  minAppVersion?: string;
-  // Plugin UI capabilities
-  ui?: {
-    // Support for compact mode - plugin can render differently when compact
-    supportsCompactMode?: boolean;
-    // Height in normal mode (pixels)
-    normalHeight?: number;
-    // Height in compact mode (pixels)
-    compactHeight?: number;
-    // Whether plugin wants to use theme colors
-    useThemeColors?: boolean;
-    // Icon badge support for compact mode
-    compactBadge?: boolean;
-  };
-  // Plugin hooks - functions that get called by the app
-  hooks?: {
-    // Called when compact mode changes
-    onCompactModeChange?: boolean;
-    // Called when theme changes
-    onThemeChange?: boolean;
-    // Called when accent color changes
-    onAccentColorChange?: boolean;
-    // Called when settings change
-    onSettingsChange?: boolean;
-  };
-}
-
-export interface PluginInfo {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  enabled: boolean;
-  installed: boolean;
-}
-
-// Plugin context passed to plugin render functions
-export interface PluginContext {
-  isCompactMode: boolean;
-  theme: {
-    colors: ThemeColors;
-    accentColor: string;
-    borderRadius: number;
-  };
-  settings: AppSettings;
-  api: typeof window.electronAPI;
-}
-
-// Plugin render result for UI components
-export interface PluginRenderResult {
-  // Main content to render
-  content: React.ReactNode;
-  // Optional badge content for compact mode
-  badge?: React.ReactNode;
-  // Height override
-  height?: number;
-}
-
-// ========================
-// Keyboard Shortcuts
-// ========================
-
-export type ShortcutCategory = 'global' | 'search' | 'results' | 'navigation';
-
-export interface ShortcutDefinition {
-  id: string;
-  name: string;
-  description: string;
-  defaultBinding: string;
-  category: ShortcutCategory;
-}
-
-// ========================
 // Settings
 // ========================
 
@@ -182,7 +96,7 @@ export interface AppSettings {
   appearance: {
     theme: string;
     accentColor: string;
-    fontSize: number; // Font size in pixels (10-24)
+    fontSize: number;
     fontFamily: string;
     animations: boolean;
     blur: { enabled: boolean; amount: number };

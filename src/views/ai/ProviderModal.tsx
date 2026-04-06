@@ -26,7 +26,7 @@ export function ProviderModal({ settings, onSettingsChange, onClose, confirm }: 
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [focusIndex, setFocusIndex] = useState(-1);
+  const [_focusIndex, setFocusIndex] = useState(-1);
   const toggleRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Sync selected provider when settings change externally
@@ -142,7 +142,7 @@ export function ProviderModal({ settings, onSettingsChange, onClose, confirm }: 
           { id: 'test', role: 'user' as const, content: 'Hi', timestamp: Date.now() },
         ];
         const request = prov.buildRequest(testMessages, prov.models[0]?.id ?? '', config);
-        await window.electronAPI.aiChat(request);
+        await window.electronAPI.aiChat(request as Parameters<typeof window.electronAPI.aiChat>[0]);
         setTestResult({ type: 'success', message: 'Connection successful!' });
       } catch (err) {
         setTestResult({ type: 'error', message: `Connection failed: ${err instanceof Error ? err.message : String(err)}` });

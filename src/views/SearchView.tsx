@@ -76,7 +76,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   const [folderItemsMap, setFolderItemsMap] = useState<Map<string, SearchResult[]>>(new Map());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-  const folderLoadingRef = useRef(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _folderLoadingRef = useRef(false);
   const [recentItems, setRecentItems] = useState<SearchResult[]>([]);
 
   // Focus zone state for Tab navigation

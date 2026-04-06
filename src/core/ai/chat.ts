@@ -4,7 +4,7 @@
 
 import type { ChatMessage, ChunkCallback, AIRequest, AIResult } from './types';
 import { generateId } from './types';
-import type { AIProvider, ProviderConfig } from './types';
+import type { ProviderConfig } from './types';
 import { providerRegistry } from './providers';
 
 export type ChatState = 'idle' | 'streaming' | 'error';

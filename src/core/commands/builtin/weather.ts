@@ -79,7 +79,7 @@ function getDayName(dateStr: string): string {
 }
 
 // Helper to build forecast data from wttr response
-function buildForecastData(data: WttrResponse, city: string): DailyForecast[] {
+function buildForecastData(data: WttrResponse, _city: string): DailyForecast[] {
   if (!data.weather) return [];
 
   return data.weather.slice(0, 7).map((day) => ({
