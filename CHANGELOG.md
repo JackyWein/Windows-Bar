@@ -1,6 +1,22 @@
 # Changelog
 
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
+## [1.0.6] - 2026-04-07
+
+Dieses Update konzentriert sich auf eine massive Verbesserung der Performance und die Beseitigung technischer Altlasten.
+
+**⚡ Performance & Stabilität**
+
+* **Asynchrones Dateisystem:** Das Auslesen von .url- und .lnk-Dateien sowie das Laden von Ordnerinhalten erfolgt nun vollständig asynchron. Das verhindert "Micro-Stuttering" und UI-Freezes während der Suche.
+* **Smart Debouncing:** Jeder überwachte Systemordner (Desktop, Downloads etc.) hat nun seinen eigenen Timer. Dateiänderungen werden dadurch präziser erkannt und die CPU weniger belastet.
+* **Memory Management:** Ein neues Schutzsystem in der Suchansicht bricht veraltete Suchanfragen sofort ab, was den Speicherverbrauch senkt und die Reaktionszeit beim Tippen verbessert.
+
+**🐛 Bugfixes**
+
+* **Icon-Fix:** Ein Fehler wurde behoben, bei dem Datei-Icons nach schnellen Suchanfragen nicht mehr korrekt angezeigt wurden.
+* **TypeScript-Bereinigung:** Kritische Typisierungsfehler in der SearchView.tsx wurden behoben.
+* **Code-Cleanup:** Über 200 Zeilen redundanter Code und ungenutzte Variablen in der main.ts wurden entfernt, um die App schlanker und wartungsfreundlicher zu machen.
+* **Wetter-Stabilität:** Die Fehlerbehandlung bei Verbindungsabbrüchen zur Wetter-API wurde verbessert.
 
 ## [1.0.5] - 2026-04-06
 
