@@ -1,3 +1,4 @@
+import type { SearchResult, AppSettings, CommandResult } from '../types';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Search, File, AppWindow, Gamepad2, Bot, Globe, Calculator,
@@ -6,7 +7,7 @@ import {
   Wind, Droplets, Eye, Cloud, Gauge, Sunrise, Sunset, Sun,
   Snowflake, CloudDrizzle, CloudHail, CloudFog, Settings,
 } from 'lucide-react';
-import type { SearchResult, AppSettings, CommandResult } from '../types';
+
 import { commandRegistry } from '../core/commands/registry';
 
 interface SearchViewProps {
@@ -68,6 +69,51 @@ function getBadge(type: string) {
   }
 }
 
+// 🧠 SCORING ENGINE (Fuzzy Search & Historie)
+function calculateScore(itemTitle: string, itemType: string, itemIdOrPath: string, query: string, history: Record<string, number>): number {
+  if (!query) return 0;
+  const q = query.toLowerCase();
+  const t = itemTitle.toLowerCase();
+
+  let baseScore = 0;
+
+  // 1. Exakte & Teil-Treffer (Höchste Prio)
+  if (t === q) baseScore = 100;
+  else if (t.startsWith(q)) baseScore = 80;
+  else if (t.includes(q)) baseScore = 60;
+  else {
+    // 2. Fuzzy Matching (Subsequence)
+    // Erlaubt z.B. "vsc" um "Visual Studio Code" zu finden
+    let qIdx = 0;
+    let consec = 0;
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === q[qIdx]) {
+        baseScore += 5 + (consec * 2); // Bonus für aufeinanderfolgende Buchstaben
+        consec++;
+        qIdx++;
+        if (qIdx === q.length) break;
+      } else {
+        consec = 0;
+      }
+    }
+    // Wenn nicht alle Buchstaben aus der Suche vorkommen, ist es kein Fuzzy-Treffer
+    if (qIdx < q.length) baseScore = 0;
+    baseScore = Math.min(baseScore, 50); // Fuzzy-Score maximal 50, damit echte Treffer immer drüber liegen
+  }
+
+  // 3. Typ-Multiplikatoren (Apps sind wichtiger als normale Textdateien)
+  const typeMult: Record<string, number> = { app: 2.0, game: 2.0, system: 1.5, folder: 1.2, file: 1.0 };
+  const mult = typeMult[itemType] || 1.0;
+
+  // 4. Klick-Historien-Bonus (Die App lernt!)
+  const clicks = history[itemIdOrPath] || 0;
+  // +5 Punkte pro Klick, maximal +50 Punkte Bonus
+  const historyBonus = Math.min(clicks * 5, 50);
+
+  return (baseScore * mult) + historyBonus;
+}
+
+
 export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -76,9 +122,10 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   const [folderItemsMap, setFolderItemsMap] = useState<Map<string, SearchResult[]>>(new Map());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _folderLoadingRef = useRef(false);
   const [recentItems, setRecentItems] = useState<SearchResult[]>([]);
+
+  // 🧠 Zustand für die Klick-Historie
+  const [clickHistory, setClickHistory] = useState<Record<string, number>>({});
 
   // Focus zone state for Tab navigation
   const [focusedZone, setFocusedZone] = useState(FOCUS_ZONE_INPUT);
@@ -89,6 +136,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   const resultsRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const loadingFoldersRef = useRef<Set<string>>(new Set());
 
   // Sync command enabled states from settings
   useEffect(() => {
@@ -101,14 +149,21 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     }
   }, [settings.commands.enabled]);
 
-  // Load/save recents
+  // Load recents & Click History on mount
   useEffect(() => {
-    const saved = localStorage.getItem('recent_searches');
-    if (saved) {
-      try { setRecentItems(JSON.parse(saved)); } catch { /* ignore */ }
+    const savedRecents = localStorage.getItem('recent_searches');
+    if (savedRecents) {
+      try { setRecentItems(JSON.parse(savedRecents)); } catch { /* ignore */ }
+    }
+
+    // Lade das "Gehirn" der Such-Engine
+    const savedHistory = localStorage.getItem('search_click_history');
+    if (savedHistory) {
+      try { setClickHistory(JSON.parse(savedHistory)); } catch { /* ignore */ }
     }
   }, []);
 
+  // Save recents
   useEffect(() => {
     localStorage.setItem('recent_searches', JSON.stringify(recentItems));
   }, [recentItems]);
@@ -140,8 +195,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     settings,
     query,
     showResults: (newResults: SearchResult[]) => setResults(newResults),
-    navigate: () => { }, // placeholder, can be extended
-    api: window.electronAPI,
+    navigate: () => { },
+    api: (window as any).electronAPI,
   }), [settings, query]);
 
   // Check if a command's required setting is enabled
@@ -155,302 +210,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     return true;
   }, [settings]);
 
-  // Search effect with debounce
-  useEffect(() => {
-    setSelectedIndex(0);
-    setExpandWeb(false);
-
-    if (!query.trim()) {
-      if (recentItems.length > 0 && settings.search.showRecents) {
-        setResults(recentItems.map(item => ({ ...item, id: `recent-${item.id}`, isRecent: true })));
-      } else {
-        setResults([]);
-      }
-      return;
-    }
-
-    const queryLower = query.trim().toLowerCase();
-    const weatherPatterns = ['wetter', 'weather', 'temperatur', 'wie wird das wetter', 'wie ist das wetter'];
-    const isWeatherQuery = weatherPatterns.some(p => queryLower.startsWith(p) || queryLower.includes(' wetter ') || queryLower.includes(' weather '));
-
-    if (isWeatherQuery && !query.trim().startsWith('/') && settings.features.weatherEnabled) {
-      const cityMatch = queryLower.match(/(?:wetter|weather|temperatur)\s+(.+)/);
-      const city = cityMatch ? cityMatch[1].trim() : settings.search.defaultCity;
-      fetchWeather(city);
-      return;
-    }
-
-    // Slash commands via registry
-    if (query.trim().startsWith('/') && !query.trim().startsWith('/ai') && !query.trim().startsWith('/g ')) {
-      let trimmed = query.trim();
-
-      // Special: /settings, /config, /prefs
-      const cmdStr = trimmed.substring(1).trim();
-      if (cmdStr === 'settings' || cmdStr === 'config' || cmdStr === 'prefs') {
-        onOpenSettings();
-        return;
-      }
-
-      // Special: /help, /? → show all commands (empty filter)
-      if (cmdStr === 'help' || cmdStr === '?') {
-        trimmed = '/';
-      }
-
-      // Try to match a command
-      const cmd = commandRegistry.match(trimmed);
-      if (cmd) {
-        if (!isCommandAvailable(cmd.requiresSetting)) {
-          setResults([{ id: 'cmd-disabled', title: 'Befehl deaktiviert', subtitle: 'Aktiviere ihn in den Einstellungen', type: 'system' }]);
-          return;
-        }
-        const triggerStr = typeof cmd.trigger === 'string' ? cmd.trigger : '';
-        const args = trimmed.substring(triggerStr.length);
-
-        // Show usage hint if command takes args but none provided
-        if (cmd.usage && !args.trim()) {
-          setResults([{ id: 'cmd-usage', title: cmd.description, subtitle: cmd.usage, type: 'calc' }]);
-          return;
-        }
-
-        const ctx = buildCommandContext();
-        const result: CommandResult | Promise<CommandResult> = cmd.handler(args, ctx);
-
-        // Helper: attach copyToClipboard to command results
-        const attachCopy = (cmdResult: CommandResult): SearchResult[] => {
-          const copyVal = cmdResult.copyToClipboard;
-          const launchable = new Set(['app', 'web', 'file']);
-          return cmdResult.results.map(r => ({
-            ...r,
-            // Forward explicit copyToClipboard from CommandResult
-            ...(copyVal ? { copyToClipboard: copyVal } : {}),
-            // For value-type results without explicit copy, use title
-            ...(r.copyToClipboard ? {} : !launchable.has(r.type) && r.type !== 'cmd' ? { copyToClipboard: r.title } : {}),
-          }));
-        };
-
-        if (result instanceof Promise) {
-          result.then(r => setResults(attachCopy(r))).catch(() => {
-            setResults([{ id: 'cmd-err', title: 'Fehler', subtitle: 'Befehl konnte nicht ausgeführt werden', type: 'system' }]);
-          });
-        } else {
-          setResults(attachCopy(result));
-        }
-        return;
-      }
-
-      // No exact match — check for usage hint or show command browser
-      // Extract filter: everything after "/" (e.g. "/ca" → "ca")
-      const filter = trimmed.substring(1).trim().toLowerCase();
-
-      // Check if input exactly matches a command trigger (minus trailing space)
-      // e.g. "/age" matches trigger "/age " → show usage hint
-      const allCmds = commandRegistry.getAll().filter(c => c.enabled);
-      const partialMatch = allCmds.find(c => {
-        const t = typeof c.trigger === 'string' ? c.trigger.replace(/ $/, '') : null;
-        return t === trimmed;
-      });
-      if (partialMatch && partialMatch.usage && !partialMatch.requiresSetting || partialMatch && partialMatch.usage && isCommandAvailable(partialMatch.requiresSetting)) {
-        setResults([{ id: 'cmd-usage', title: partialMatch.description, subtitle: partialMatch.usage, type: 'calc' }]);
-        return;
-      }
-
-      // Category metadata for display
-      const categoryInfo: Record<string, { label: string; type: SearchResult['type'] }> = {
-        calc: { label: 'Rechner & Generatoren', type: 'calc' },
-        text: { label: 'Text & Hash-Tools', type: 'calc' },
-        web: { label: 'Web & Netzwerk', type: 'web' },
-        weather: { label: 'Wetter', type: 'web' },
-        notes: { label: 'Notizen', type: 'system' },
-        clipboard: { label: 'Zwischenablage', type: 'system' },
-        system: { label: 'System', type: 'system' },
-        power: { label: 'Power-User', type: 'system' },
-      };
-
-      // Filter commands: by search term AND by setting availability
-      const filtered = (filter
-        ? allCmds.filter(c => {
-          const trigger = typeof c.trigger === 'string' ? c.trigger : '';
-          return (
-            trigger.toLowerCase().includes(filter) ||
-            c.id.toLowerCase().includes(filter) ||
-            c.description.toLowerCase().includes(filter) ||
-            c.category.toLowerCase().includes(filter) ||
-            (c.aliases && c.aliases.some(a => a.toLowerCase().includes(filter)))
-          );
-        })
-        : allCmds
-      ).filter(c => isCommandAvailable(c.requiresSetting));
-
-      // Group by category, preserving order
-      const categoryOrder = ['calc', 'text', 'web', 'weather', 'notes', 'clipboard', 'system', 'power'];
-      const grouped: { cat: string; info: typeof categoryInfo[string]; commands: typeof allCmds }[] = [];
-
-      for (const cat of categoryOrder) {
-        const catCmds = filtered.filter(c => c.category === cat);
-        if (catCmds.length > 0 && categoryInfo[cat]) {
-          grouped.push({ cat, info: categoryInfo[cat], commands: catCmds });
-        }
-      }
-
-      if (grouped.length === 0) {
-        setResults([{ id: 'cmd-no-match', title: 'Keine Befehle gefunden', subtitle: `/help oder /${filter} — versuche einen anderen Begriff`, type: 'system' }]);
-        return;
-      }
-
-      // Build results: category headers + command items
-      const cmdResults: SearchResult[] = [];
-      let idx = 0;
-      for (const group of grouped) {
-        cmdResults.push({
-          id: `cat-${group.cat}`,
-          title: group.info.label,
-          subtitle: `${group.commands.length} Befehl${group.commands.length > 1 ? 'e' : ''}`,
-          type: group.info.type,
-          isHelpCategory: true,
-        });
-        for (const c of group.commands) {
-          const trigger = typeof c.trigger === 'string' ? c.trigger.replace(/ $/, '') : c.id;
-          idx++;
-          cmdResults.push({
-            id: `help-cmd-${idx}`,
-            title: trigger,
-            subtitle: c.description + (c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''),
-            type: group.info.type,
-            path: trigger,
-          });
-        }
-      }
-
-      setResults(cmdResults);
-      return;
-    }
-
-    // /ai command
-    if (query.trim() === '/ai' || query.startsWith('/ai ')) {
-      setResults([{ id: 'ai', title: 'Google Gemini öffnen', subtitle: 'KI-Chat direkt hier starten', type: 'ai' }]);
-      return;
-    }
-
-    // /g command (web search)
-    if (query.startsWith('/g ')) {
-      setLoading(true);
-      const term = query.substring(3);
-      const t = setTimeout(async () => {
-        try {
-          const raw = await window.electronAPI.fetchInstantAnswer(term);
-          if (raw) {
-            setResults(raw.map((item: Record<string, unknown>, idx: number) => ({
-              id: `w-${idx}`,
-              title: String(item.title ?? ''),
-              subtitle: item.subtitle ? String(item.subtitle) : undefined,
-              type: (item.type as SearchResult['type']) ?? 'web',
-              path: item.path ? String(item.path) : undefined,
-              isWeb: Boolean(item.isWeb),
-            })));
-          }
-        } catch { /* ignore */ }
-        setLoading(false);
-      }, 300);
-      return () => clearTimeout(t);
-    }
-
-    // Normal search with debounce
-    setLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const raw = await window.electronAPI.searchEverything(query);
-        const mappedLocal: SearchResult[] = (raw || []).map((item: Record<string, unknown>, idx: number) => ({
-          id: `r-${idx}`,
-          title: String((item.title || '')).replace(/\.(lnk|url)$/i, ''),
-          subtitle: item.path ? String(item.path) : undefined,
-          type: (['game', 'app', 'system', 'folder'].includes(String(item.type || '')) ? String(item.type) : 'file') as SearchResult['type'],
-          path: item.path ? String(item.path) : undefined,
-          iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined,
-          iconPath: item.iconPath ? String(item.iconPath) : undefined,
-        }));
-
-        // Sort: apps/games/system first (closest match), then folders, then files last
-        const q = query.toLowerCase();
-        const typeRank: Record<string, number> = { app: 0, game: 0, system: 1, folder: 2, file: 3 };
-        mappedLocal.sort((a, b) => {
-          const ra = typeRank[a.type] ?? 3;
-          const rb = typeRank[b.type] ?? 3;
-          if (ra !== rb) return ra - rb;
-          // Within same type: exact match first, then starts-with, then alphabetical
-          const at = a.title.toLowerCase();
-          const bt = b.title.toLowerCase();
-          const aExact = at === q ? 0 : at.startsWith(q) ? 1 : 2;
-          const bExact = bt === q ? 0 : bt.startsWith(q) ? 1 : 2;
-          if (aExact !== bExact) return aExact - bExact;
-          return at.localeCompare(bt);
-        });
-
-        setResults(mappedLocal);
-        setLoading(false);
-
-        // Lazy-load icons for app/game/folder results
-        const iconCandidates = mappedLocal.filter(r => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
-        for (const item of iconCandidates) {
-          window.electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
-            if (icon) {
-              setResults(prev => prev.map(r =>
-                r.id === item.id ? { ...r, iconBase64: icon } : r
-              ));
-            }
-          }).catch(() => { /* ignore */ });
-        }
-
-        // Fetch web suggestions if enabled
-        if (query.trim().length >= 2 && !query.startsWith('/ai') && settings.search.showWebSuggestions) {
-          window.electronAPI.fetchInstantAnswer(query).then((webRaw: Record<string, unknown>[]) => {
-            if (webRaw && webRaw.length > 0) {
-              setResults(prev => {
-                const newWeb: SearchResult[] = webRaw.map((w, idx) => ({
-                  id: `w-impl-${idx}`,
-                  title: String(w.title ?? ''),
-                  subtitle: w.subtitle ? String(w.subtitle) : undefined,
-                  type: (w.type as SearchResult['type']) ?? 'web',
-                  path: w.path ? String(w.path) : undefined,
-                  isWeb: Boolean(w.isWeb),
-                }));
-                return [...prev.filter(r => !r.id.startsWith('w-impl')), ...newWeb];
-              });
-            }
-          }).catch(() => { /* ignore */ });
-        }
-      } catch {
-        setLoading(false);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query, recentItems, settings, buildCommandContext, isCommandAvailable, onOpenSettings]);
-
-  // Auto-scroll to selected
-  useEffect(() => {
-    const el = resultsRef.current?.querySelector('.result-item.selected');
-    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
-  }, [selectedIndex]);
-
-  // Focus the correct element when zone changes
-  useEffect(() => {
-    switch (focusedZone) {
-      case FOCUS_ZONE_INPUT:
-        inputRef.current?.focus();
-        break;
-      case FOCUS_ZONE_QUICK_ACTIONS:
-        // Focus is managed via tabIndex/keyboard, no explicit focus needed
-        break;
-      case FOCUS_ZONE_RESULTS:
-        // Arrow keys handle result navigation
-        break;
-      case FOCUS_ZONE_FOOTER:
-        settingsBtnRef.current?.focus();
-        break;
-    }
-  }, [focusedZone]);
-
-  // Helper to get day name from date string
-  function getDayName(dateStr: string): string {
+  // Helper for Weather
+  const getDayName = useCallback((dateStr: string): string => {
     const date = new Date(dateStr);
     const today = new Date();
     const tomorrow = new Date(today);
@@ -461,13 +222,16 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
 
     const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
     return days[date.getDay()];
-  }
+  }, []);
 
-  // Weather fetcher (still used for natural language weather queries)
-  async function fetchWeather(city: string) {
+  // Safe Weather Fetcher
+  const fetchWeather = useCallback(async (city: string, isActive: { current: boolean }) => {
+    setLoading(true);
     try {
       const r = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=de`);
       const data = await r.json();
+      if (!isActive.current) return;
+
       const current = data.current_condition?.[0];
       const today = data.weather?.[0];
       const hourly = today?.hourly || [];
@@ -477,46 +241,33 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         return;
       }
 
-      const hourlyData = hourly.map((h: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }) => ({
-        time: h.time,
-        temp: parseInt(h.tempC),
-        feelsLike: parseInt(h.FeelsLikeC),
-        chanceOfRain: h.chanceofrain,
-        weatherIcon: h.weatherCode,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hourlyData = hourly.map((h: any) => ({
+        time: h.time, temp: parseInt(h.tempC), feelsLike: parseInt(h.FeelsLikeC),
+        chanceOfRain: h.chanceofrain, weatherIcon: h.weatherCode,
       }));
 
-      // Build 7-day forecast
-      const forecast = (data.weather || []).slice(0, 7).map((day: { date: string; mintempC: string; maxtempC: string; astronomy: { sunrise: string; sunset: string }[]; hourly: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }[]; lang_de?: { value: string }[]; weatherDesc?: { value: string }[] }) => ({
-        date: day.date,
-        dayName: getDayName(day.date),
-        minTemp: day.mintempC,
-        maxTemp: day.maxtempC,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const forecast = (data.weather || []).slice(0, 7).map((day: any) => ({
+        date: day.date, dayName: getDayName(day.date), minTemp: day.mintempC, maxTemp: day.maxtempC,
         weatherIcon: day.hourly?.[4]?.weatherCode || '116',
         weatherDesc: day.lang_de?.[0]?.value || day.weatherDesc?.[0]?.value || '',
-        sunrise: day.astronomy?.[0]?.sunrise,
-        sunset: day.astronomy?.[0]?.sunset,
-        hourly: (day.hourly || []).map((h: { time: string; tempC: string; FeelsLikeC: string; chanceofrain: string; weatherCode: string }) => ({
-          time: h.time,
-          temp: parseInt(h.tempC),
-          feelsLike: parseInt(h.FeelsLikeC),
-          chanceOfRain: h.chanceofrain,
-          weatherIcon: h.weatherCode,
+        sunrise: day.astronomy?.[0]?.sunrise, sunset: day.astronomy?.[0]?.sunset,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        hourly: (day.hourly || []).map((h: any) => ({
+          time: h.time, temp: parseInt(h.tempC), feelsLike: parseInt(h.FeelsLikeC),
+          chanceOfRain: h.chanceofrain, weatherIcon: h.weatherCode,
         })),
       }));
 
       const weatherData = {
-        temp: current.temp_C, feelsLike: current.FeelsLikeC,
-        humidity: current.humidity, windSpeed: current.windspeedKmph,
-        windDir: current.winddir16Point, uvIndex: current.uvIndex,
-        visibility: current.visibility, pressure: current.pressure,
-        cloudCover: current.cloudcover,
+        temp: current.temp_C, feelsLike: current.FeelsLikeC, humidity: current.humidity,
+        windSpeed: current.windspeedKmph, windDir: current.winddir16Point, uvIndex: current.uvIndex,
+        visibility: current.visibility, pressure: current.pressure, cloudCover: current.cloudcover,
         weatherDesc: current.lang_de?.[0]?.value || current.weatherDesc?.[0]?.value || 'Unbekannt',
-        precip: current.precipMM, city,
-        minTemp: today?.mintempC, maxTemp: today?.maxtempC,
-        sunrise: today?.astronomy?.[0]?.sunrise,
-        sunset: today?.astronomy?.[0]?.sunset,
-        hourly: hourlyData,
-        forecast,
+        precip: current.precipMM, city, minTemp: today?.mintempC, maxTemp: today?.maxtempC,
+        sunrise: today?.astronomy?.[0]?.sunrise, sunset: today?.astronomy?.[0]?.sunset,
+        hourly: hourlyData, forecast,
       };
 
       setResults([
@@ -524,36 +275,280 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         { id: 'weather-more', title: 'Vollständige Wettervorschau öffnen', subtitle: `wttr.in/${encodeURIComponent(city)}`, type: 'web', path: `https://wttr.in/${encodeURIComponent(city)}?lang=de`, isWeb: true },
       ]);
     } catch {
-      setResults([{ id: 'cmd-err', title: 'Wetter nicht abrufbar', subtitle: 'Service nicht verfügbar', type: 'system' }]);
+      if (isActive.current) {
+        setResults([{ id: 'cmd-err', title: 'Wetter nicht abrufbar', subtitle: 'Service nicht verfügbar', type: 'system' }]);
+      }
+    } finally {
+      if (isActive.current) setLoading(false);
     }
-  }
+  }, [getDayName]);
 
-  // Track which folders are currently loading
-  const loadingFoldersRef = useRef<Set<string>>(new Set());
+  // Recents Rendering
+  useEffect(() => {
+    if (!query.trim()) {
+      if (recentItems.length > 0 && settings.search.showRecents) {
+        setResults(recentItems.map(item => ({ ...item, id: `recent-${item.id}`, isRecent: true })));
+      } else {
+        setResults([]);
+      }
+    }
+  }, [query, recentItems, settings.search.showRecents]);
 
-  // Execute action on a result
+  // Main Search Logic with Scoring
+  useEffect(() => {
+    if (!query.trim()) return;
+
+    const isActive = { current: true };
+    setSelectedIndex(0);
+    setExpandWeb(false);
+
+    const queryLower = query.trim().toLowerCase();
+    const weatherPatterns = ['wetter', 'weather', 'temperatur', 'wie wird das wetter', 'wie ist das wetter'];
+    const isWeatherQuery = weatherPatterns.some(p => queryLower.startsWith(p) || queryLower.includes(' wetter ') || queryLower.includes(' weather '));
+
+    if (isWeatherQuery && !query.trim().startsWith('/') && settings.features.weatherEnabled) {
+      const cityMatch = queryLower.match(/(?:wetter|weather|temperatur)\s+(.+)/);
+      const city = cityMatch ? cityMatch[1].trim() : settings.search.defaultCity;
+      fetchWeather(city, isActive);
+      return () => { isActive.current = false; };
+    }
+
+    // Slash Commands
+    if (query.trim().startsWith('/') && !query.trim().startsWith('/ai') && !query.trim().startsWith('/g ')) {
+      let trimmed = query.trim();
+      const cmdStr = trimmed.substring(1).trim();
+
+      if (cmdStr === 'settings' || cmdStr === 'config' || cmdStr === 'prefs') {
+        onOpenSettings();
+        return;
+      }
+
+      if (cmdStr === 'help' || cmdStr === '?') trimmed = '/';
+
+      const cmd = commandRegistry.match(trimmed);
+      if (cmd) {
+        if (!isCommandAvailable(cmd.requiresSetting)) {
+          setResults([{ id: 'cmd-disabled', title: 'Befehl deaktiviert', subtitle: 'Aktiviere ihn in den Einstellungen', type: 'system' }]);
+          return;
+        }
+
+        const triggerStr = typeof cmd.trigger === 'string' ? cmd.trigger : '';
+        const args = trimmed.substring(triggerStr.length);
+
+        if (cmd.usage && !args.trim()) {
+          setResults([{ id: 'cmd-usage', title: cmd.description, subtitle: cmd.usage, type: 'calc' }]);
+          return;
+        }
+
+        const ctx = buildCommandContext();
+        const result = cmd.handler(args, ctx);
+
+        const attachCopy = (cmdResult: CommandResult): SearchResult[] => {
+          const copyVal = cmdResult.copyToClipboard;
+          const launchable = new Set(['app', 'web', 'file']);
+          return cmdResult.results.map(r => ({
+            ...r,
+            ...(copyVal ? { copyToClipboard: copyVal } : {}),
+            ...(r.copyToClipboard ? {} : !launchable.has(r.type) && (r.type as any) !== 'cmd' ? { copyToClipboard: r.title } : {}),
+          }));
+        };
+
+        if (result instanceof Promise) {
+          setLoading(true);
+          result.then(r => { if (isActive.current) setResults(attachCopy(r)); })
+            .catch(() => { if (isActive.current) setResults([{ id: 'cmd-err', title: 'Fehler', subtitle: 'Befehl konnte nicht ausgeführt werden', type: 'system' }]); })
+            .finally(() => { if (isActive.current) setLoading(false); });
+        } else {
+          setResults(attachCopy(result));
+        }
+        return () => { isActive.current = false; };
+      }
+
+      // Command Browser
+      const filter = trimmed.substring(1).trim().toLowerCase();
+      const allCmds = commandRegistry.getAll().filter(c => c.enabled);
+
+      const partialMatch = allCmds.find(c => (typeof c.trigger === 'string' ? c.trigger.replace(/ $/, '') : null) === trimmed);
+      if (partialMatch && partialMatch.usage && isCommandAvailable(partialMatch.requiresSetting)) {
+        setResults([{ id: 'cmd-usage', title: partialMatch.description, subtitle: partialMatch.usage, type: 'calc' }]);
+        return;
+      }
+
+      const categoryInfo: Record<string, { label: string; type: SearchResult['type'] }> = {
+        calc: { label: 'Rechner & Generatoren', type: 'calc' }, text: { label: 'Text & Hash-Tools', type: 'calc' },
+        web: { label: 'Web & Netzwerk', type: 'web' }, weather: { label: 'Wetter', type: 'web' },
+        notes: { label: 'Notizen', type: 'system' }, clipboard: { label: 'Zwischenablage', type: 'system' },
+        system: { label: 'System', type: 'system' }, power: { label: 'Power-User', type: 'system' },
+      };
+
+      const filtered = (filter ? allCmds.filter(c => {
+        const trigger = typeof c.trigger === 'string' ? c.trigger : '';
+        return (trigger.toLowerCase().includes(filter) || c.id.toLowerCase().includes(filter) || c.description.toLowerCase().includes(filter) || c.category.toLowerCase().includes(filter) || (c.aliases && c.aliases.some(a => a.toLowerCase().includes(filter))));
+      }) : allCmds).filter(c => isCommandAvailable(c.requiresSetting));
+
+      const grouped = [];
+      for (const cat of ['calc', 'text', 'web', 'weather', 'notes', 'clipboard', 'system', 'power']) {
+        const catCmds = filtered.filter(c => c.category === cat);
+        if (catCmds.length > 0 && categoryInfo[cat]) grouped.push({ cat, info: categoryInfo[cat], commands: catCmds });
+      }
+
+      if (grouped.length === 0) {
+        setResults([{ id: 'cmd-no-match', title: 'Keine Befehle gefunden', subtitle: `/help oder /${filter} — versuche einen anderen Begriff`, type: 'system' }]);
+        return;
+      }
+
+      const cmdResults: SearchResult[] = [];
+      let idx = 0;
+      for (const group of grouped) {
+        cmdResults.push({ id: `cat-${group.cat}`, title: group.info.label, subtitle: `${group.commands.length} Befehl${group.commands.length > 1 ? 'e' : ''}`, type: group.info.type, isHelpCategory: true });
+        for (const c of group.commands) {
+          const trigger = typeof c.trigger === 'string' ? c.trigger.replace(/ $/, '') : c.id;
+          idx++;
+          cmdResults.push({ id: `help-cmd-${idx}`, title: trigger, subtitle: c.description + (c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''), type: group.info.type, path: trigger });
+        }
+      }
+      setResults(cmdResults);
+      return () => { isActive.current = false; };
+    }
+
+    if (query.trim() === '/ai' || query.startsWith('/ai ')) {
+      setResults([{ id: 'ai', title: 'Google Gemini öffnen', subtitle: 'KI-Chat direkt hier starten', type: 'ai' }]);
+      return;
+    }
+
+    // Google Web Search Inline
+    if (query.startsWith('/g ')) {
+      setLoading(true);
+      const term = query.substring(3);
+      const t = setTimeout(async () => {
+        try {
+          const raw = await (window as any).electronAPI.fetchInstantAnswer(term);
+          if (isActive.current && raw) {
+            setResults((raw as any[]).map((item: any, idx: number) => ({
+              id: `w-${idx}`, title: String(item.title ?? ''), subtitle: item.subtitle ? String(item.subtitle) : undefined,
+              type: (item.type as SearchResult['type']) ?? 'web', path: item.path ? String(item.path) : undefined, isWeb: Boolean(item.isWeb),
+            })));
+          }
+        } catch { /* ignore */ }
+        if (isActive.current) setLoading(false);
+      }, 300);
+      return () => { isActive.current = false; clearTimeout(t); };
+    }
+
+    // Standard Search
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const raw = await (window as any).electronAPI.searchEverything(query);
+        if (!isActive.current) return;
+
+        const mappedLocal: SearchResult[] = ((raw as any[]) || []).map((item: any, idx: number) => ({
+          id: `r-${idx}`, title: String((item.title || '')).replace(/\.(lnk|url)$/i, ''), subtitle: item.path ? String(item.path) : undefined,
+          type: (['game', 'app', 'system', 'folder'].includes(String(item.type || '')) ? String(item.type) : 'file') as SearchResult['type'],
+          path: item.path ? String(item.path) : undefined, iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined, iconPath: item.iconPath ? String(item.iconPath) : undefined,
+        }));
+
+        // 🧠 HIER WIRD SORTIERT (Neue KI/Fuzzy/History Logik)
+        mappedLocal.forEach((item: any) => {
+          const identifier = item.path || item.id;
+          item._score = calculateScore(item.title, item.type, identifier, query, clickHistory);
+        });
+
+        // Absteigend nach Score sortieren (Höchster Score = Platz 1)
+        mappedLocal.sort((a: any, b: any) => b._score - a._score);
+
+        if (isActive.current) setResults(mappedLocal);
+        if (isActive.current) setLoading(false);
+
+        // Fetch Icons Lazy
+        const iconCandidates = mappedLocal.filter(r => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
+        for (const item of iconCandidates) {
+          (window as any).electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
+            if (icon && isActive.current) {
+              setResults(prev => prev.map(r => r.id === item.id ? { ...r, iconBase64: icon } : r));
+            }
+          }).catch(() => { /* ignore */ });
+        }
+
+        // Fetch Web Suggestions
+        if (query.trim().length >= 2 && !query.startsWith('/ai') && settings.search.showWebSuggestions) {
+          (window as any).electronAPI.fetchInstantAnswer(query).then((webRaw: any) => {
+            if (isActive.current && webRaw && webRaw.length > 0) {
+              setResults(prev => {
+                const newWeb: SearchResult[] = (webRaw as any[]).map((w: any, idx: number) => ({
+                  id: `w-impl-${idx}`, title: String(w.title ?? ''), subtitle: w.subtitle ? String(w.subtitle) : undefined,
+                  type: (w.type as SearchResult['type']) ?? 'web', path: w.path ? String(w.path) : undefined, isWeb: Boolean(w.isWeb),
+                }));
+                return [...prev.filter(r => !r.id.startsWith('w-impl')), ...newWeb];
+              });
+            }
+          }).catch(() => { /* ignore */ });
+        }
+      } catch {
+        if (isActive.current) setLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      isActive.current = false;
+      clearTimeout(timer);
+    };
+  }, [query, settings, buildCommandContext, isCommandAvailable, onOpenSettings, fetchWeather, clickHistory]);
+
+  // Auto-scroll to selected
+  useEffect(() => {
+    const el = resultsRef.current?.querySelector('.result-item.selected');
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  }, [selectedIndex]);
+
+  // Focus management
+  useEffect(() => {
+    switch (focusedZone) {
+      case FOCUS_ZONE_INPUT:
+        inputRef.current?.focus();
+        break;
+      case FOCUS_ZONE_FOOTER:
+        settingsBtnRef.current?.focus();
+        break;
+    }
+  }, [focusedZone]);
+
+  // 🧠 Hilfsfunktion: Klick-Historie speichern
+  const trackActionClick = (result: SearchResult) => {
+    if (!result || result.isExpandBtn || result.type === 'ai' || result.isHelpCategory) return;
+
+    // Wir nutzen den Pfad (z.B. C:\Program Files\...) oder die Command-ID als eindeutigen Schlüssel
+    const key = result.path || result.id;
+    if (!key) return;
+
+    setClickHistory(prev => {
+      const next = { ...prev, [key]: (prev[key] || 0) + 1 };
+      localStorage.setItem('search_click_history', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // Action execution
   function executeAction(result: SearchResult) {
     if (!result) return;
 
-    // Folder expansion on Enter - works for any folder (main or sub-item)
+    // Tracke den Klick für unser "Usage-Based Scoring"
+    trackActionClick(result);
+
+    // Folder Expansion
     if (result.type === 'folder' && result.path) {
       const isExpanded = expandedFolders.includes(result.path);
 
       if (isExpanded) {
-        // Collapse this folder and all its children
         setExpandedFolders(prev => prev.filter(p => !p.startsWith(result.path!)));
         setFolderItemsMap(prev => {
           const newMap = new Map(prev);
-          // Remove this folder and all sub-folders
           for (const key of newMap.keys()) {
-            if (key.startsWith(result.path!)) {
-              newMap.delete(key);
-            }
+            if (key.startsWith(result.path!)) newMap.delete(key);
           }
           return newMap;
         });
       } else {
-        // Expand this folder
         setExpandedFolders(prev => [...prev, result.path!]);
         loadingFoldersRef.current.add(result.path!);
 
@@ -561,18 +556,14 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         const depth = result.folderDepth || 0;
 
         const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
-        Promise.race([window.electronAPI.listDirectory(result.path), timeoutPromise])
-          .then((raw: Record<string, unknown>[]) => {
-            const items = (raw || []).map((item: Record<string, unknown>, idx: number) => ({
+        Promise.race([(window as any).electronAPI.listDirectory(result.path), timeoutPromise])
+          .then((raw: any) => {
+            const items = ((raw as any[]) || []).map((item: any, idx: number) => ({
               id: `sub-${depth}-${idx}-${item.path}`,
-              title: String(item.title ?? ''),
-              subtitle: item.path ? String(item.path) : undefined,
-              type: (item.type as SearchResult['type']) ?? 'file',
-              path: item.path ? String(item.path) : undefined,
-              iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined,
-              iconPath: item.iconPath ? String(item.iconPath) : undefined,
-              isSubItem: true,
-              folderDepth: depth + 1,
+              title: String(item.title ?? ''), subtitle: item.path ? String(item.path) : undefined,
+              type: (item.type as SearchResult['type']) ?? 'file', path: item.path ? String(item.path) : undefined,
+              iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined, iconPath: item.iconPath ? String(item.iconPath) : undefined,
+              isSubItem: true, folderDepth: depth + 1,
             }));
 
             loadingFoldersRef.current.delete(currentPath);
@@ -582,18 +573,15 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
               return newMap;
             });
 
-            // Lazy-load icons for folder sub-items (apps and folders)
             const iconCandidates = items.filter(r => (r.type === 'app' || r.type === 'folder') && r.iconPath);
             for (const item of iconCandidates) {
-              window.electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
+              (window as any).electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
                 if (icon) {
                   setFolderItemsMap(prev => {
                     const newMap = new Map(prev);
                     const folderItems = newMap.get(currentPath);
                     if (folderItems) {
-                      newMap.set(currentPath, folderItems.map(r =>
-                        r.id === item.id ? { ...r, iconBase64: icon } : r
-                      ));
+                      newMap.set(currentPath, folderItems.map(r => r.id === item.id ? { ...r, iconBase64: icon } : r));
                     }
                     return newMap;
                   });
@@ -613,25 +601,18 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
       return;
     }
 
-    // Help command -> insert into input
     if (result.path && result.path.startsWith('/') && result.id.startsWith('help-cmd-')) {
       setQuery(result.path + ' ');
       setTimeout(() => inputRef.current?.focus(), 50);
       return;
     }
 
-    // Copy to clipboard for command results
     if (result.copyToClipboard) {
       try {
-        window.electronAPI.writeClipboard(result.copyToClipboard);
-        // Brief visual feedback: flash the result title
-        setResults(prev => prev.map(r =>
-          r.id === result.id ? { ...r, title: 'Kopiert!', subtitle: result.copyToClipboard } : r
-        ));
+        (window as any).electronAPI.writeClipboard(result.copyToClipboard);
+        setResults(prev => prev.map(r => r.id === result.id ? { ...r, title: 'Kopiert!', subtitle: result.copyToClipboard } : r));
         setTimeout(() => {
-          setResults(prev => prev.map(r =>
-            r.id === result.id ? { ...r, title: result.title, subtitle: result.subtitle } : r
-          ));
+          setResults(prev => prev.map(r => r.id === result.id ? { ...r, title: result.title, subtitle: result.subtitle } : r));
         }, 800);
       } catch { /* ignore */ }
       return;
@@ -652,25 +633,23 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
       } else if (result.type === 'ai') {
         onOpenAI();
       } else if (result.isWeb || result.type === 'web') {
-        if (result.path) window.electronAPI.openUrl(result.path);
+        if (result.path) (window as any).electronAPI.openUrl(result.path);
       } else if (result.path) {
-        window.electronAPI.openFile(result.path);
+        (window as any).electronAPI.openFile(result.path);
       }
     } catch (e) {
       console.error(e);
     }
   }
 
-  // Keyboard handling
+  // Keyboard
   function handleKeyDown(e: React.KeyboardEvent) {
-    // Ctrl+Tab: toggle web expansion (must check BEFORE plain Tab)
     if (e.key === 'Tab' && e.ctrlKey) {
       e.preventDefault();
       setExpandWeb(prev => !prev);
       return;
     }
 
-    // Tab: cycle focus zones
     if (e.key === 'Tab') {
       e.preventDefault();
       const nextZone = e.shiftKey
@@ -678,7 +657,6 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
         : (focusedZone + 1) % TOTAL_ZONES;
       setFocusedZone(nextZone);
 
-      // If entering results zone, select first result
       if (nextZone === FOCUS_ZONE_RESULTS && displayResults.length > 0) {
         setSelectedIndex(0);
         interactionMode.current = 'keyboard';
@@ -703,7 +681,6 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      // If in quick actions zone and no query, execute the focused quick action
       if (focusedZone === FOCUS_ZONE_QUICK_ACTIONS && !query.trim()) {
         const quickActions = getQuickActions();
         if (focusedQuickAction >= 0 && focusedQuickAction < quickActions.length) {
@@ -714,114 +691,62 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
       executeAction(displayResults[selectedIndex]);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      window.electronAPI.hideWindow();
+      (window as any).electronAPI.hideWindow();
     }
   }
 
-  // Quick actions data
   function getQuickActions() {
     return [
+      { title: 'KI Chat', sub: 'Google Gemini', iconClass: 'ai', icon: <Bot size={15} />, action: onOpenAI },
+      { title: 'Web Suche', sub: 'Inline Ergebnisse', iconClass: 'web', icon: <Globe size={15} />, action: () => setQuery('/g ') },
+      { title: 'Dateien', sub: 'Schnellzugriff', iconClass: 'files', icon: <File size={15} />, action: () => setQuery('Downloads') },
       {
-        title: 'KI Chat',
-        sub: 'Google Gemini',
-        iconClass: 'ai',
-        icon: <Bot size={15} />,
-        action: onOpenAI,
-      },
-      {
-        title: 'Web Suche',
-        sub: 'Inline Ergebnisse',
-        iconClass: 'web',
-        icon: <Globe size={15} />,
-        action: () => setQuery('/g '),
-      },
-      {
-        title: 'Dateien',
-        sub: 'Schnellzugriff',
-        iconClass: 'files',
-        icon: <File size={15} />,
-        action: () => setQuery('Downloads'),
-      },
-      {
-        title: 'Wetter',
-        sub: 'Direkt anzeigen',
-        iconClass: 'calc',
-        icon: <CloudSun size={15} />,
-        action: () => {
+        title: 'Wetter', sub: 'Direkt anzeigen', iconClass: 'calc', icon: <CloudSun size={15} />, action: () => {
           setQuery('wetter');
           setTimeout(() => {
             inputRef.current?.focus();
             inputRef.current?.setSelectionRange(6, 6);
           }, 50);
-        },
+        }
       },
     ];
   }
 
-  // Derived display results (web expansion + folder items)
+  // Display computation (Web results merging + Folders)
   const displayResults = useMemo(() => {
     if (query.startsWith('/g ')) return results;
 
-    // check if this is a help/command browser view (don't limit results)
     const isHelpView = results.some(r => r.isHelpCategory || r.id.startsWith('help-cmd-'));
-
     const localAndPriority = results.filter(r => r.type !== 'web' || !r.isWeb || r.id === 'web-inline');
     const webClutter = results.filter(r => r.type === 'web' && r.isWeb && r.id !== 'web-inline');
 
     let out: SearchResult[] = [...localAndPriority];
 
-    // Helper function to recursively inject folder items
-    function injectFolderItems(out: SearchResult[], folderPath: string, depth: number): void {
-      // Find this folder in the results
-      const parentIdx = out.findIndex(r => r.path === folderPath);
+    function injectFolderItems(outArray: SearchResult[], folderPath: string, depth: number): void {
+      const parentIdx = outArray.findIndex(r => r.path === folderPath);
       if (parentIdx !== -1) {
-        // get folder contents
         const folderContents = folderItemsMap.get(folderPath);
         const isLoading = loadingFoldersRef.current.has(folderPath);
-
-        // inject sub-items with proper indentation
         const subItems: SearchResult[] = [];
+
         if (folderContents && folderContents.length > 0) {
-          for (const item of folderContents) {
-            subItems.push({
-              ...item,
-              isSubItem: true,
-              folderDepth: depth + 1,
-            });
-          }
+          for (const item of folderContents) subItems.push({ ...item, isSubItem: true, folderDepth: depth + 1 });
         } else if (isLoading) {
-          subItems.push({
-            id: `loading-${folderPath}`,
-            title: 'Lade Ordnerinhalt...',
-            subtitle: 'Bitte warten...',
-            type: 'file',
-            isSubItem: true,
-            folderDepth: depth + 1,
-          });
+          subItems.push({ id: `loading-${folderPath}`, title: 'Lade Ordnerinhalt...', subtitle: 'Bitte warten...', type: 'file', isSubItem: true, folderDepth: depth + 1 });
         } else {
-          subItems.push({
-            id: `empty-${folderPath}`,
-            title: '(Leerer Ordner oder Zugriff verweigert)',
-            subtitle: 'Keine anzeigbaren Dateien gefunden',
-            type: 'file',
-            isSubItem: true,
-            folderDepth: depth + 1,
-          });
+          subItems.push({ id: `empty-${folderPath}`, title: '(Leerer Ordner oder Zugriff verweigert)', subtitle: 'Keine Dateien gefunden', type: 'file', isSubItem: true, folderDepth: depth + 1 });
         }
 
-        // insert sub-items after the parent
-        out.splice(parentIdx + 1, 0, ...subItems);
+        outArray.splice(parentIdx + 1, 0, ...subItems);
 
-        // recursively inject sub-folder contents
         for (const subItem of subItems) {
           if (subItem.type === 'folder' && expandedFolders.includes(subItem.path!)) {
-            injectFolderItems(out, subItem.path!, (depth + 1));
+            injectFolderItems(outArray, subItem.path!, (depth + 1));
           }
         }
       }
     }
 
-    // inject folder items for all expanded folders
     for (const folderPath of expandedFolders) {
       injectFolderItems(out, folderPath, 0);
     }
@@ -832,21 +757,11 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
       const fallback = webClutter.find(r => r.title.startsWith('Nach "'));
       if (fallback) out.push(fallback);
       if (webClutter.length > 1) {
-        out.push({
-          id: 'expand-btn',
-          title: 'Web-Vorschläge einblenden',
-          subtitle: `${webClutter.length - 1} weitere Ergebnisse (Strg+Tab)`,
-          type: 'web',
-          isExpandBtn: true,
-        });
+        out.push({ id: 'expand-btn', title: 'Web-Vorschläge einblenden', subtitle: `${webClutter.length - 1} weitere Ergebnisse (Strg+Tab)`, type: 'web', isExpandBtn: true });
       }
     }
 
-    // Don't limit results for help view - show all commands
-    if (isHelpView) {
-      return out;
-    }
-
+    if (isHelpView) return out;
     return out.slice(0, settings.search.maxResults);
   }, [results, expandWeb, query, expandedFolders, folderItemsMap, settings.search.maxResults]);
 
@@ -881,7 +796,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
 
         {loading && <div className="loading-bar" />}
 
-        {/* Quick Actions - Hidden in compact mode */}
+        {/* Quick Actions */}
         {!query.trim() && !settings.appearance.compactMode && (
           <div className="quick-actions" ref={quickActionsRef}>
             {quickActions.map((qa, idx) => (
@@ -926,35 +841,21 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
 
         {/* Results */}
         {displayResults.length > 0 && (
-          <div
-            className="results-container"
-            ref={resultsRef}
-            onMouseMove={() => interactionMode.current = 'mouse'}
-          >
+          <div className="results-container" ref={resultsRef} onMouseMove={() => interactionMode.current = 'mouse'}>
             {!query.trim() && recentItems.length > 0 && (
               <div className="section-header-row">
                 <div className="section-label">Zuletzt gesucht</div>
-                <button
-                  className="clear-history-btn"
-                  tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}
-                  onClick={e => { e.stopPropagation(); setRecentItems([]); }}
-                >
-                  Verlauf löschen
-                </button>
+                <button className="clear-history-btn" tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1} onClick={e => { e.stopPropagation(); setRecentItems([]); }}>Verlauf löschen</button>
               </div>
             )}
             {displayResults.map((res, idx) => {
-              // Weather card
               if (res.id === 'weather-card' && res.path) {
                 try {
                   const data = JSON.parse(res.path);
                   return <WeatherCard key={res.id} data={data} selected={idx === selectedIndex} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} />;
-                } catch {
-                  return null;
-                }
+                } catch { return null; }
               }
 
-              // Command browser category header
               if (res.isHelpCategory) {
                 return (
                   <div key={res.id} className="cmd-category-header">
@@ -964,38 +865,20 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
                 );
               }
 
-              // Command item (from help-cmd-*)
               if (res.id.startsWith('help-cmd-')) {
                 return (
-                  <div
-                    key={res.id}
-                    className={`result-item cmd-item ${idx === selectedIndex ? 'selected' : ''}`}
-                    onClick={() => executeAction(res)}
-                    onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }}
-                    tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}
-                  >
+                  <div key={res.id} className={`result-item cmd-item ${idx === selectedIndex ? 'selected' : ''}`} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}>
                     <div className="cmd-trigger">{res.title}</div>
-                    <div className="result-content">
-                      <span className="result-subtitle">{res.subtitle}</span>
-                    </div>
+                    <div className="result-content"><span className="result-subtitle">{res.subtitle}</span></div>
                     <span className="result-enter">↵</span>
                   </div>
                 );
               }
 
-              // Normal result
               return (
-                <div
-                  key={res.id}
-                  className={`result-item ${idx === selectedIndex ? 'selected' : ''} ${res.isSubItem ? 'sub-item' : ''}`}
-                  onClick={() => executeAction(res)}
-                  onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }}
-                  tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}
-                >
+                <div key={res.id} className={`result-item ${idx === selectedIndex ? 'selected' : ''} ${res.isSubItem ? 'sub-item' : ''}`} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}>
                   <div className={`result-icon ${res.type}`}>
-                    {res.iconBase64
-                      ? <img src={res.iconBase64} alt="" className="result-icon-img" />
-                      : getIcon(res.type, res.path)}
+                    {res.iconBase64 ? <img src={res.iconBase64} alt="" className="result-icon-img" /> : getIcon(res.type, res.path)}
                   </div>
                   <div className="result-content">
                     <span className="result-title" style={res.isExpandBtn ? { color: 'var(--accent)' } : {}}>{res.title}</span>
@@ -1023,81 +906,45 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
   );
 }
 
-// Helper function to format time from wttr.in format (e.g., "0", "100", "200" -> "00:00", "01:00", "02:00")
+// Weather helpers
 function formatTime(timeStr: string): string {
-  const t = timeStr.padStart(4, '0'); // "0" -> "0000", "100" -> "0100"
+  const t = timeStr.padStart(4, '0');
   const hours = t.substring(0, 2);
   return `${hours}:00`;
 }
 
-// Weather icon mapping based on wttr.in weather codes
 function getWeatherIcon(code: number): React.ReactNode {
-  if (code === 113) return <Sun size={20} />; // Sunny
-  if (code === 116) return <CloudSun size={20} />; // Partly cloudy
-  if (code === 119 || code === 122) return <Cloud size={20} />; // Cloudy
-  if (code >= 176 && code <= 200) return <CloudDrizzle size={20} />; // Light rain
-  if (code >= 263 && code <= 266) return <CloudDrizzle size={20} />; // Drizzle
-  if (code >= 293 && code <= 302) return <CloudRain size={20} />; // Rain
-  if (code >= 308 && code <= 314) return <CloudHail size={20} />; // Heavy rain
-  if (code >= 317 && code <= 338) return <Snowflake size={20} />; // Snow
-  if (code >= 350 && code <= 377) return <CloudHail size={20} />; // Ice/Hail
-  if (code >= 386 && code <= 395) return <CloudRain size={20} />; // Thunderstorm
+  if (code === 113) return <Sun size={20} />;
+  if (code === 116) return <CloudSun size={20} />;
+  if (code === 119 || code === 122) return <Cloud size={20} />;
+  if (code >= 176 && code <= 200) return <CloudDrizzle size={20} />;
+  if (code >= 263 && code <= 266) return <CloudDrizzle size={20} />;
+  if (code >= 293 && code <= 302) return <CloudRain size={20} />;
+  if (code >= 308 && code <= 314) return <CloudHail size={20} />;
+  if (code >= 317 && code <= 338) return <Snowflake size={20} />;
+  if (code >= 350 && code <= 377) return <CloudHail size={20} />;
+  if (code >= 386 && code <= 395) return <CloudRain size={20} />;
   return <CloudSun size={20} />;
 }
 
-// Weather card sub-component
+// Weather Card Sub-Component
 function WeatherCard({ data, selected, onClick, onMouseEnter }: {
-  data: {
-    hourly?: { time: string; temp: number; chanceOfRain: string; weatherIcon: string }[];
-    temp: string;
-    feelsLike: string;
-    humidity: string;
-    windSpeed: string;
-    windDir: string;
-    uvIndex: string;
-    visibility: string;
-    pressure: string;
-    cloudCover: string;
-    weatherDesc: string;
-    city: string;
-    minTemp: string;
-    maxTemp: string;
-    sunrise?: string;
-    sunset?: string;
-    forecast?: {
-      date: string;
-      dayName: string;
-      minTemp: string;
-      maxTemp: string;
-      weatherIcon: string;
-      weatherDesc: string;
-      sunrise?: string;
-      sunset?: string;
-      hourly: { time: string; temp: number; chanceOfRain: string; weatherIcon: string }[];
-    }[];
-  };
-  selected: boolean;
-  onClick: () => void;
-  onMouseEnter: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any; selected: boolean; onClick: () => void; onMouseEnter: () => void;
 }) {
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const forecast = data.forecast || [];
-
-  // Get data for selected day
   const selectedDay = forecast[selectedDayIndex];
   const isToday = selectedDayIndex === 0;
 
-  // Use hourly data from selected day, or fallback to today's data
   const hourlyData = selectedDay?.hourly || data.hourly || [];
   const displayMinTemp = selectedDay?.minTemp || data.minTemp;
   const displayMaxTemp = selectedDay?.maxTemp || data.maxTemp;
   const displayWeatherDesc = selectedDay?.weatherDesc || data.weatherDesc;
-  const displaySunrise = selectedDay?.sunrise || data.sunrise;
-  const displaySunset = selectedDay?.sunset || data.sunset;
-  // wttr.in returns 3-hour intervals by default (0, 3, 6, 9, 12, 15, 18, 21)
-  // Use all available hourly data points for better resolution
+
   const graphHours = hourlyData.slice(0, 8);
-  const temps = graphHours.map((h) => h.temp);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const temps = graphHours.map((h: any) => h.temp);
   const minTemp = Math.min(...temps) - 2;
   const maxTemp = Math.max(...temps) + 2;
   const tempRange = maxTemp - minTemp || 1;
@@ -1105,18 +952,18 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
   const graphHeight = 80;
   const padding = 15;
 
-  const points = graphHours.map((h, i) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const points = graphHours.map((h: any, i: number) => ({
     x: padding + (i / (graphHours.length - 1 || 1)) * (graphWidth - padding * 2),
     y: graphHeight - padding - ((h.temp - minTemp) / tempRange) * (graphHeight - padding * 2),
-    temp: h.temp,
-    time: h.time,
+    temp: h.temp, time: h.time,
   }));
 
-  // Get accent color from CSS variable for dynamic theming
   const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7c5cfc';
   const accentRgb = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '124, 92, 252';
 
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pathD = points.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const areaD = `${pathD} L ${points[points.length - 1]?.x || 0} ${graphHeight - padding} L ${padding} ${graphHeight - padding} Z`;
 
   const isPrecip = (h: { chanceOfRain: string; weatherIcon: string }) => {
@@ -1132,18 +979,11 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
 
   return (
     <div className={`weather-card ${selected ? 'selected' : ''}`} onClick={onClick} onMouseEnter={onMouseEnter}>
-      {/* Day selector tabs */}
       {forecast.length > 1 && (
         <div className="weather-day-tabs">
-          {forecast.map((day, idx) => (
-            <button
-              key={day.date}
-              className={`weather-day-tab ${idx === selectedDayIndex ? 'active' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedDayIndex(idx);
-              }}
-            >
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {forecast.map((day: any, idx: number) => (
+            <button key={day.date} className={`weather-day-tab ${idx === selectedDayIndex ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectedDayIndex(idx); }}>
               <span className="weather-day-tab-icon">{getWeatherIcon(parseInt(day.weatherIcon))}</span>
               <span className="weather-day-tab-name">{day.dayName}</span>
               <span className="weather-day-tab-temp">{day.minTemp}°/{day.maxTemp}°</span>
@@ -1176,30 +1016,21 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
                 <stop offset="100%" stopColor={`rgba(${accentRgb}, 0.05)`} />
               </linearGradient>
             </defs>
-            {[0, 1, 2].map(i => (
-              <line key={i} x1={padding} y1={padding + i * (graphHeight - padding * 2) / 2} x2={graphWidth - padding} y2={graphHeight - padding} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-            ))}
+            {[0, 1, 2].map(i => <line key={i} x1={padding} y1={padding + i * (graphHeight - padding * 2) / 2} x2={graphWidth - padding} y2={graphHeight - padding} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />)}
             <path d={areaD} fill="url(#tempGradient)" />
             <path d={pathD} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            {points.map((p, i) => (
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {points.map((p: any, i: number) => (
               <g key={i}>
                 <circle cx={p.x} cy={p.y} r="3" fill={accentColor} />
                 <circle cx={p.x} cy={p.y} r="5" fill={`rgba(${accentRgb}, 0.3)`} />
               </g>
             ))}
           </svg>
-          <div className="weather-graph-labels">
-            {points.map((p, i) => (
-              <span key={i} className="weather-graph-label">
-                {formatTime(p.time)}
-              </span>
-            ))}
-          </div>
-          <div className="weather-graph-temps">
-            {points.map((p, i) => (
-              <span key={i} className="weather-graph-temp">{p.temp}°</span>
-            ))}
-          </div>
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          <div className="weather-graph-labels">{points.map((p: any, i: number) => <span key={i} className="weather-graph-label">{formatTime(p.time)}</span>)}</div>
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          <div className="weather-graph-temps">{points.map((p: any, i: number) => <span key={i} className="weather-graph-temp">{p.temp}°</span>)}</div>
         </div>
       )}
 
@@ -1207,25 +1038,19 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
         <div className="weather-precip-zone">
           <div className="weather-precip-label">
             Niederschlag (24h)
-            {hourlyData.some(h => isPrecip(h).hasPrecip) && (
-              <span className="weather-precip-warning"><CloudDrizzle size={12} /> Niederschlag erwartet</span>
-            )}
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {hourlyData.some((h: any) => isPrecip(h).hasPrecip) && <span className="weather-precip-warning"><CloudDrizzle size={12} /> Niederschlag erwartet</span>}
           </div>
           <div className="weather-precip-bar">
-            {/* Use all 3-hour interval data from wttr.in */}
-            {hourlyData.slice(0, 8).map((h, i) => {
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {hourlyData.slice(0, 8).map((h: any, i: number) => {
               const p = isPrecip(h);
               const barHeight = p.hasPrecip ? Math.max(p.chance, 15) : Math.max(p.chance, 5);
               const precipType = p.isSnow ? 'snow' : p.isHail ? 'hail' : (p.isSleet || p.isFreezing) ? 'sleet' : 'rain';
-              const segmentType = p.isSnow ? 'snow-type' : p.isHail ? 'hail-type' : (p.isSleet || p.isFreezing) ? 'hail-type' : '';
-              const iconClass = p.isSnow ? 'snow-icon' : p.isHail ? 'hail-icon' : (p.isSleet || p.isFreezing) ? 'sleet-icon' : 'rain-icon';
               const PrecipIcon = p.isSnow ? Snowflake : p.isHail ? CloudHail : (p.isSleet || p.isFreezing) ? CloudFog : CloudDrizzle;
-
               return (
-                <div key={i} className={`weather-precip-segment ${p.hasPrecip ? 'has-precip' : ''} ${p.hasPrecip ? segmentType : ''}`}>
-                  {p.hasPrecip && (
-                    <div className={`weather-precip-icon ${iconClass}`}><PrecipIcon size={10} /></div>
-                  )}
+                <div key={i} className={`weather-precip-segment ${p.hasPrecip ? 'has-precip' : ''}`}>
+                  {p.hasPrecip && <div className="weather-precip-icon"><PrecipIcon size={10} /></div>}
                   <div className={`weather-precip-fill ${precipType}`} style={{ height: `${barHeight}%` }}>
                     <span className="weather-precip-chance">{h.chanceOfRain}%</span>
                   </div>
@@ -1234,12 +1059,8 @@ function WeatherCard({ data, selected, onClick, onMouseEnter }: {
             })}
           </div>
           <div className="weather-precip-time-labels">
-            {/* Time labels for 3-hour intervals from wttr.in */}
-            {hourlyData.slice(0, 8).map((h, i) => {
-              const p = isPrecip(h);
-              const time = h.time || '';
-              return <span key={i} className={`weather-precip-time ${p.hasPrecip ? 'highlight' : ''}`}>{formatTime(time)}</span>;
-            })}
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {hourlyData.slice(0, 8).map((h: any, i: number) => <span key={i} className={`weather-precip-time ${isPrecip(h).hasPrecip ? 'highlight' : ''}`}>{formatTime(h.time)}</span>)}
           </div>
         </div>
       )}
