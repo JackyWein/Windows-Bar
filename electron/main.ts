@@ -1,10 +1,10 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, screen, powerSaveBlocker, safeStorage } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, safeStorage } from 'electron';
 import { join } from 'path';
 import { promises as fs, watch as fsWatch } from 'fs';
 import type { FSWatcher } from 'fs';
 import { homedir } from 'os';
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
-import { tryGetIconWithRetry, iconCache } from './utils/icons';
+import { tryGetIconWithRetry } from './utils/icons';
 import { autoUpdater } from 'electron-updater';
 import { searchEverything, isEverythingRunning } from './indexers/everything';
 import { searchWithWindowsIndex } from './indexers/windowsSearch';
@@ -72,10 +72,10 @@ async function buildIndex() {
 // FILE SYSTEM WATCHER - Real-time index updates
 // ========================
 const activeWatchers: FSWatcher[] = [];
-let debounceTimer: NodeJS.Timeout | null = null;
-const DEBOUNCE_MS = 2000; // Wait 2 seconds before re-indexing
+// NEU: Map statt einer einzelnen Variable
+const debounceTimers = new Map<string, NodeJS.Timeout>();
+const DEBOUNCE_MS = 2000;
 
-// Folders to watch for changes (high-priority user folders)
 function getWatchPaths(): string[] {
   const paths: string[] = [];
 
@@ -134,24 +134,26 @@ async function reindexPath(changedPath: string) {
   }
 }
 
-// Handle file system events with debouncing
+// Handle file system events with debouncing per path
 function handleFSEvent(eventType: string, filename: string | null, watchPath: string) {
   if (!filename) return;
 
   // Skip temporary and hidden files
   if (filename.startsWith('~') || filename.startsWith('.') || filename.endsWith('.tmp')) return;
 
-  // Clear existing timer
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
+  // Clear existing timer FOR THIS SPECIFIC PATH
+  if (debounceTimers.has(watchPath)) {
+    clearTimeout(debounceTimers.get(watchPath)!);
   }
 
   // Set new timer
-  debounceTimer = setTimeout(() => {
+  const timer = setTimeout(() => {
     console.log(`[WindowsBar] FS change detected: ${eventType} on ${filename} in ${watchPath}`);
     reindexPath(watchPath).catch(e => console.error('[WindowsBar] Re-index error:', e));
-    debounceTimer = null;
+    debounceTimers.delete(watchPath);
   }, DEBOUNCE_MS);
+
+  debounceTimers.set(watchPath, timer);
 }
 
 // Start watching critical folders
@@ -479,7 +481,7 @@ async function crawl(dir: string, defaultType: 'app' | 'file', priority: number,
           } else if (nameLower.endsWith('.url')) {
             // Parse .url file to extract IconFile
             try {
-              const content = require('fs').readFileSync(fullPath, 'utf-8');
+              const content = await fs.readFile(fullPath, 'utf-8');
               const iconMatch = content.match(/IconFile=(.+)/i);
               if (iconMatch?.[1]) {
                 let extractedPath = iconMatch[1].trim().replace(/^["']|["']$/g, '');
@@ -487,11 +489,7 @@ async function crawl(dir: string, defaultType: 'app' | 'file', priority: number,
                 if (!extractedPath.match(/^[A-Za-z]:\\/)) {
                   const urlDir = fullPath.substring(0, fullPath.lastIndexOf('\\'));
                   const absPath = join(urlDir, extractedPath);
-                  try {
-                    if (require('fs').existsSync(absPath)) {
-                      extractedPath = absPath;
-                    }
-                  } catch (e) { }
+                  try { await fs.access(absPath); extractedPath = absPath; } catch (e) { }
                 }
                 iconPath = extractedPath;
               }
@@ -627,7 +625,7 @@ autoUpdater.on('update-available', (info) => {
   console.log('[WindowsBar] Update available:', info.version);
 });
 
-autoUpdater.on('update-not-available', (info) => {
+autoUpdater.on('update-not-available', () => {
   console.log('[WindowsBar] No update available. Current version:', app.getVersion());
 });
 
@@ -711,10 +709,10 @@ function toggleWindow() {
 
 app.whenReady().then(() => {
   createWindow();
-  
+
   // Initialize plugin system first (creates plugins folder if needed)
   initializePlugins();
-  
+
   buildIndex().then(() => {
     // Start file watchers after initial index is built
     startWatchers();
@@ -958,20 +956,18 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
     }
 
     // Return with iconPath for lazy loading icons in frontend
-    return visibleResults.slice(0, 30).map(entry => {
+    // Return with iconPath for lazy loading icons in frontend (Asynchron gemacht!)
+    const formattedResults = await Promise.all(visibleResults.slice(0, 30).map(async (entry) => {
       const name = entry.name;
       const fullPath = join(dirPath, name);
       let type: 'folder' | 'file' | 'app' = entry.isDirectory() ? 'folder' : 'file';
       const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
       if (type === 'file' && APP_EXTS.has(ext)) type = 'app';
 
-      // Determine iconPath for lazy loading
       let iconPath: string | undefined;
       if (type === 'folder') {
-        // Folders can have icons too (from folder.ico or the folder itself)
         iconPath = fullPath;
       } else if (type === 'app') {
-        // For apps, try to resolve shortcut targets for better icons
         if (name.toLowerCase().endsWith('.lnk')) {
           try {
             const sh = shell.readShortcutLink(fullPath);
@@ -980,9 +976,9 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
             iconPath = fullPath;
           }
         } else if (name.toLowerCase().endsWith('.url')) {
-          // Parse .url file to extract IconFile
           try {
-            const content = require('fs').readFileSync(fullPath, 'utf-8');
+            // Asynchrones Lesen blockiert die UI nicht!
+            const content = await fs.readFile(fullPath, 'utf-8');
             const iconMatch = content.match(/IconFile=(.+)/i);
             if (iconMatch?.[1]) {
               let extractedPath = iconMatch[1].trim().replace(/^["']|["']$/g, '');
@@ -990,9 +986,8 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
                 const urlDir = fullPath.substring(0, fullPath.lastIndexOf('\\'));
                 const absPath = join(urlDir, extractedPath);
                 try {
-                  if (require('fs').existsSync(absPath)) {
-                    extractedPath = absPath;
-                  }
+                  await fs.access(absPath); // Asynchron!
+                  extractedPath = absPath;
                 } catch (e) { }
               }
               iconPath = extractedPath;
@@ -1030,7 +1025,8 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
         iconBase64: null,
         iconPath: iconPath || fullPath
       };
-    });
+    }));
+    return formattedResults;
   } catch (e) {
     console.error('list-directory error', e);
     return [];
@@ -1222,7 +1218,7 @@ ipcMain.handle('kill-process', async (_event, processName: string) => {
       return { success: false, error: 'Invalid process name after sanitization' };
     }
 
-    exec(`taskkill /f /im "${safeName}.exe"`, (error, stdout, stderr) => {
+    exec(`taskkill /f /im "${safeName}.exe"`, (error) => {
       if (error) {
         console.error('Kill process error:', error);
       }
@@ -1288,15 +1284,10 @@ const PLUGINS_DIR = join(app.getPath('userData'), 'plugins');
 
 /** Ensure the plugins directory exists */
 async function ensurePluginsDir(): Promise<void> {
-  try { 
-    await fs.mkdir(PLUGINS_DIR, { recursive: true }); 
+  try {
+    await fs.mkdir(PLUGINS_DIR, { recursive: true });
     console.log('[WindowsBar] Plugins directory ensured:', PLUGINS_DIR);
   } catch { /* already exists */ }
-}
-
-/** Get the plugins directory path */
-function getPluginsDir(): string {
-  return PLUGINS_DIR;
 }
 
 /** Read and parse a plugin manifest.json */
@@ -1330,7 +1321,7 @@ async function loadPluginIcon(pluginDir: string): Promise<string | null> {
 async function initializePlugins(): Promise<void> {
   await ensurePluginsDir();
   console.log('[WindowsBar] Plugin system initialized. Plugins directory:', PLUGINS_DIR);
-  
+
   // List installed plugins for logging
   try {
     const entries = await fs.readdir(PLUGINS_DIR, { withFileTypes: true });
@@ -1354,7 +1345,7 @@ ipcMain.handle('plugin:list', async () => {
       if (manifest) {
         // Try to load plugin icon
         const iconBase64 = await loadPluginIcon(pluginDir);
-        
+
         plugins.push({
           id: manifest.id ?? entry.name,
           name: manifest.name ?? entry.name,
@@ -1399,7 +1390,7 @@ ipcMain.handle('plugin:install', async (_event, sourcePath: string) => {
 
   // Copy plugin files
   await fs.cp(sourcePath, destDir, { recursive: true, force: true });
-  
+
   console.log(`[WindowsBar] Plugin "${pluginId}" installed to:`, destDir);
 
   // Load icon for the newly installed plugin
@@ -1658,11 +1649,11 @@ ipcMain.handle('check-for-updates', async () => {
   try {
     console.log('[WindowsBar] Manual update check triggered');
     const result = await autoUpdater.checkForUpdates();
-    
+
     if (result && result.updateInfo) {
       const currentVersion = app.getVersion();
       const latestVersion = result.updateInfo.version;
-      
+
       if (result.updateInfo.version !== currentVersion) {
         console.log(`[WindowsBar] Update available: ${latestVersion}`);
         return {
@@ -1676,24 +1667,23 @@ ipcMain.handle('check-for-updates', async () => {
         return { available: false, currentVersion };
       }
     }
-    
+
     return { available: false, currentVersion: app.getVersion() };
   } catch (error) {
     console.error('[WindowsBar] Update check failed:', error);
-    return { 
-      available: false, 
-      currentVersion: app.getVersion(), 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    return {
+      available: false,
+      currentVersion: app.getVersion(),
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 });
 
-// Install downloaded update immediately
+// Lade das Update erst herunter, wenn der Nutzer auf den Button klickt
 ipcMain.on('install-update', () => {
-  console.log('[WindowsBar] Quitting and installing update...');
-  autoUpdater.quitAndInstall();
+  console.log('[WindowsBar] Starte Update-Download...');
+  autoUpdater.downloadUpdate();
 });
-
 // Update system settings from renderer
 ipcMain.on('update-system-settings', (_event, settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) => {
   console.log('[WindowsBar] Updating system settings:', settings);
