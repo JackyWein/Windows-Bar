@@ -816,6 +816,242 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             </p>
           </div>
         </div>
+
+        <style>{`
+          .plugin-section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+          }
+          
+          .plugin-count-badge {
+            background: var(--accent);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+          }
+          
+          .plugin-loading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 24px;
+            color: var(--text-muted);
+          }
+          
+          .plugin-loading .spin {
+            animation: spin 1s linear infinite;
+          }
+          
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          
+          .plugin-empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+          }
+          
+          .plugin-empty-icon {
+            opacity: 0.3;
+            margin-bottom: 16px;
+          }
+          
+          .plugin-empty-state h3 {
+            color: var(--text);
+            margin: 0 0 8px 0;
+          }
+          
+          .plugin-empty-state p {
+            margin: 0 0 16px 0;
+          }
+          
+          .plugin-empty-hint {
+            font-size: 13px;
+            opacity: 0.7;
+          }
+          
+          .plugin-empty-hint p {
+            margin: 4px 0;
+          }
+          
+          .plugin-empty-hint code {
+            background: var(--surface);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+          }
+          
+          .plugin-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+          }
+          
+          .plugin-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius, 12px);
+            padding: 16px;
+            transition: all 0.2s ease;
+          }
+          
+          .plugin-card.enabled {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent)20;
+          }
+          
+          .plugin-card.disabled {
+            opacity: 0.7;
+          }
+          
+          .plugin-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+          }
+          
+          .plugin-icon-wrapper {
+            flex-shrink: 0;
+          }
+          
+          .plugin-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-hover, var(--accent)));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+          }
+          
+          .plugin-info {
+            flex: 1;
+            min-width: 0;
+          }
+          
+          .plugin-name-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          
+          .plugin-name {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+          }
+          
+          .plugin-version {
+            font-size: 11px;
+            color: var(--text-muted);
+            background: var(--bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+          }
+          
+          .plugin-author {
+            margin: 4px 0 0 0;
+            font-size: 12px;
+            color: var(--text-muted);
+          }
+          
+          .plugin-description {
+            margin: 0 0 12px 0;
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.4;
+          }
+          
+          .plugin-card-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+          }
+          
+          .plugin-toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          
+          .plugin-toggle-row .power-on {
+            color: var(--accent);
+          }
+          
+          .plugin-toggle-row .power-off {
+            color: var(--text-muted);
+          }
+          
+          .plugin-toggle-label {
+            font-size: 13px;
+            color: var(--text-muted);
+          }
+          
+          .plugin-uninstall-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 6px;
+            transition: all 0.2s;
+          }
+          
+          .plugin-uninstall-btn:hover {
+            background: rgba(255, 0, 0, 0.1);
+            color: #ff4444;
+          }
+          
+          .plugin-install-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            border: 2px dashed var(--border);
+            border-radius: var(--radius, 12px);
+            margin-top: 8px;
+          }
+          
+          .plugin-install-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          
+          .plugin-install-btn:hover {
+            background: var(--accent-hover, var(--accent));
+            transform: translateY(-1px);
+          }
+          
+          .plugin-install-hint {
+            margin: 8px 0 0 0;
+            font-size: 12px;
+            color: var(--text-muted);
+          }
+        `}</style>
       </div>
     );
   }

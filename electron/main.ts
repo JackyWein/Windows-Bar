@@ -711,6 +711,10 @@ function toggleWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  
+  // Initialize plugin system first (creates plugins folder if needed)
+  initializePlugins();
+  
   buildIndex().then(() => {
     // Start file watchers after initial index is built
     startWatchers();
@@ -1284,7 +1288,15 @@ const PLUGINS_DIR = join(app.getPath('userData'), 'plugins');
 
 /** Ensure the plugins directory exists */
 async function ensurePluginsDir(): Promise<void> {
-  try { await fs.mkdir(PLUGINS_DIR, { recursive: true }); } catch { /* already exists */ }
+  try { 
+    await fs.mkdir(PLUGINS_DIR, { recursive: true }); 
+    console.log('[WindowsBar] Plugins directory ensured:', PLUGINS_DIR);
+  } catch { /* already exists */ }
+}
+
+/** Get the plugins directory path */
+function getPluginsDir(): string {
+  return PLUGINS_DIR;
 }
 
 /** Read and parse a plugin manifest.json */
@@ -1297,6 +1309,38 @@ async function readManifest(pluginDir: string): Promise<Record<string, unknown> 
   }
 }
 
+/** Load plugin icon as base64 if available */
+async function loadPluginIcon(pluginDir: string): Promise<string | null> {
+  const iconExtensions = ['png', 'svg', 'ico', 'jpg'];
+  for (const ext of iconExtensions) {
+    const iconPath = join(pluginDir, `icon.${ext}`);
+    try {
+      const iconData = await fs.readFile(iconPath);
+      const base64 = iconData.toString('base64');
+      const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
+      return `data:${mimeType};base64,${base64}`;
+    } catch {
+      // Try next extension
+    }
+  }
+  return null;
+}
+
+/** Initialize plugins on app start - creates folder and loads installed plugins */
+async function initializePlugins(): Promise<void> {
+  await ensurePluginsDir();
+  console.log('[WindowsBar] Plugin system initialized. Plugins directory:', PLUGINS_DIR);
+  
+  // List installed plugins for logging
+  try {
+    const entries = await fs.readdir(PLUGINS_DIR, { withFileTypes: true });
+    const pluginDirs = entries.filter(e => e.isDirectory());
+    console.log(`[WindowsBar] Found ${pluginDirs.length} installed plugin(s)`);
+  } catch (e) {
+    console.error('[WindowsBar] Error scanning plugins directory:', e);
+  }
+}
+
 ipcMain.handle('plugin:list', async () => {
   await ensurePluginsDir();
   const plugins: Array<Record<string, unknown>> = [];
@@ -1305,8 +1349,12 @@ ipcMain.handle('plugin:list', async () => {
     const entries = await fs.readdir(PLUGINS_DIR, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const manifest = await readManifest(join(PLUGINS_DIR, entry.name));
+      const pluginDir = join(PLUGINS_DIR, entry.name);
+      const manifest = await readManifest(pluginDir);
       if (manifest) {
+        // Try to load plugin icon
+        const iconBase64 = await loadPluginIcon(pluginDir);
+        
         plugins.push({
           id: manifest.id ?? entry.name,
           name: manifest.name ?? entry.name,
@@ -1315,6 +1363,7 @@ ipcMain.handle('plugin:list', async () => {
           author: manifest.author ?? '',
           enabled: true,
           installed: true,
+          iconBase64,
         });
       }
     }
@@ -1323,6 +1372,10 @@ ipcMain.handle('plugin:list', async () => {
   }
 
   return plugins;
+});
+
+ipcMain.handle('plugin:get-path', () => {
+  return PLUGINS_DIR;
 });
 
 ipcMain.handle('plugin:install', async (_event, sourcePath: string) => {
@@ -1337,8 +1390,20 @@ ipcMain.handle('plugin:install', async (_event, sourcePath: string) => {
   const pluginId = String(manifest.id ?? 'unknown-plugin');
   const destDir = join(PLUGINS_DIR, pluginId);
 
+  // Check if plugin already exists and remove it first
+  try {
+    await fs.rm(destDir, { recursive: true, force: true });
+  } catch {
+    // Directory didn't exist, that's fine
+  }
+
   // Copy plugin files
   await fs.cp(sourcePath, destDir, { recursive: true, force: true });
+  
+  console.log(`[WindowsBar] Plugin "${pluginId}" installed to:`, destDir);
+
+  // Load icon for the newly installed plugin
+  const iconBase64 = await loadPluginIcon(destDir);
 
   return {
     id: pluginId,
@@ -1348,6 +1413,7 @@ ipcMain.handle('plugin:install', async (_event, sourcePath: string) => {
     author: String(manifest.author ?? ''),
     enabled: true,
     installed: true,
+    iconBase64,
   };
 });
 
@@ -1355,6 +1421,7 @@ ipcMain.handle('plugin:uninstall', async (_event, pluginId: string) => {
   const pluginDir = join(PLUGINS_DIR, pluginId);
   try {
     await fs.rm(pluginDir, { recursive: true, force: true });
+    console.log(`[WindowsBar] Plugin "${pluginId}" uninstalled`);
   } catch (e) {
     console.error('plugin:uninstall error:', e);
     throw e;

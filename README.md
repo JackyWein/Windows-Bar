@@ -408,6 +408,73 @@ Outputs an NSIS installer to `dist/`.
 
 ---
 
+## 🚀 Release Script
+
+Das Release-Script automatisiert den gesamten Release-Prozess für Windows Bar.
+
+### Verfügbare Befehle
+
+```bash
+# Patch Release (1.0.3 → 1.0.4) - Bugfixes, kleine Änderungen
+npm run release patch
+
+# Minor Release (1.0.3 → 1.1.0) - Neue Features, rückwärtskompatibel
+npm run release minor
+
+# Major Release (1.0.3 → 2.0.0) - Breaking Changes
+npm run release major
+```
+
+### Was das Release-Script macht
+
+1. **Version Bump** - Aktualisiert die Version in `package.json`
+2. **Build** - Erstellt den Production-Build (`npm run build`)
+3. **Git Tag** - Erstellt einen Git-Tag (z.B. `v1.0.4`)
+4. **Git Commit** - Committet die Versionsänderung
+5. **Push zu GitHub** - Pusht den Commit und Tag zu GitHub
+6. **GitHub Release** - Erstellt ein Release auf GitHub mit:
+   - Installer `.exe`
+   - `.exe.blockmap` für Auto-Updates
+   - `latest.yml` für Update-Checker
+
+### Voraussetzungen
+
+- **GitHub CLI (`gh`)** - Muss installiert und authentifiziert sein
+  ```bash
+  # GitHub CLI installieren
+  winget install --id GitHub.cli
+  
+  # Authentifizieren
+  gh auth login
+  ```
+
+- **Git** - Mit Zugriff auf das Repository
+
+- **Build-Umgebung** - Alle Dependencies müssen installiert sein (`bun install`)
+
+### Release-Workflow
+
+```mermaid
+flowchart LR
+    A[npm run release patch] --> B[Version bump]
+    B --> C[Build app]
+    C --> D[Git commit + tag]
+    D --> E[Push to GitHub]
+    E --> F[Create GitHub Release]
+    F --> G[✅ Release fertig!]
+```
+
+### Fehlerbehebung
+
+| Problem | Lösung |
+|---------|--------|
+| `gh` not found | `winget install --id GitHub.cli` |
+| Not authenticated | `gh auth login` |
+| Git push failed | Manuell pushen: `git push origin main --tags` |
+| Release creation failed | Manuelles Release auf GitHub erstellen |
+
+---
+
 ## Extensibility
 
 ### Plugin System

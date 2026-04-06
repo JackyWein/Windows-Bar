@@ -73,4 +73,5 @@ contextBridge.exposeInMainWorld('pluginAPI', {
   install: (source: string) => ipcRenderer.invoke('plugin:install', source),
   uninstall: (id: string) => ipcRenderer.invoke('plugin:uninstall', id),
   toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin:toggle', id, enabled),
+  getPath: () => ipcRenderer.invoke('plugin:get-path'),
 });
