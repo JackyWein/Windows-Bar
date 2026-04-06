@@ -1,6 +1,13 @@
 # Changelog
-
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
+## [1.0.8] - 2026-04-08
+
+**✨ Neue Features & Highlights**
+
+* **Fuzzy Search:** Die Suchfunktion wurde durch Fuzzy Search verbessert, sodass nun auch ungenaue Suchanfragen zu besseren Ergebnissen führen.
+
+* **Click History:** Die Suchfunktion wurde durch Click History verbessert, sodass nun auch ungenaue Suchanfragen zu besseren Ergebnissen führen.
+
 ## [1.0.7] - 2026-04-08
 
 Dieses Update bringt ein komplett neues System für die Release-Notes und behebt Layout-Fehler in den Einstellungen.
