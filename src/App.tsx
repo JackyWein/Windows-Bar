@@ -7,6 +7,7 @@ import { SettingsView } from "./views/SettingsView";
 import { AiView } from "./views/AiView";
 import { NotesView } from "./views/NotesView";
 import { registerBuiltinCommands } from "./core/commands/builtin";
+import { initExternalCommands } from "./core/commands/external-loader";
 import { builtinThemes, getThemeById } from "./core/settings/themes";
 import type { Theme } from "./types";
 import type { AISettings } from "./core/ai";
@@ -15,6 +16,7 @@ import "./index.css";
 
 // Initialize command registry on app load
 registerBuiltinCommands();
+initExternalCommands();
 
 /**
  * Applies ALL appearance settings as CSS variables.

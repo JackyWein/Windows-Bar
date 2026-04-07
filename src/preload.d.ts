@@ -63,6 +63,9 @@ interface ElectronAPI {
   // Persistent Data
   readDataSync: (key: string) => string | null;
   writeData: (key: string, data: string) => void;
+
+  // External Commands
+  onExternalCommands: (callback: (commands: any[]) => void) => void;
 }
 
 interface PluginAPI {

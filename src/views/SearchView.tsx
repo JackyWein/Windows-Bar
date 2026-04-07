@@ -312,7 +312,52 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
       const cityMatch = queryLower.match(/(?:wetter|weather|temperatur)\s+(.+)/);
       const city = cityMatch ? cityMatch[1].trim() : settings.search.defaultCity;
       fetchWeather(city, isActive);
-      return () => { isActive.current = false; };
+      return () => { isActive.current = false };
+    }
+
+    // Drive filter command: #d suchbegriff or #c suchbegriff etc.
+    if (query.trim().startsWith('#')) {
+      const driveStr = query.trim().substring(1).trim();
+      const driveMatch = driveStr.match(/^([a-zA-Z])\s*(.*)/);
+      if (driveMatch) {
+        const driveLetter = driveMatch[1].toUpperCase();
+        const searchTerm = driveMatch[2].trim();
+        (window as any).electronAPI.searchEverything(searchTerm).then((raw: any) => {
+          if (!isActive.current) return;
+          const mappedLocal: SearchResult[] = ((raw as any[]) || []).map((item: any, idx: number) => ({
+            id: `r-${idx}`, title: String((item.title || '')).replace(/\.(lnk|url)$/i, ''), subtitle: item.path ? String(item.path) : undefined,
+            type: (['game', 'app', 'system', 'folder'].includes(String(item.type || '')) ? String(item.type) : 'file') as SearchResult['type'],
+            path: item.path ? String(item.path) : undefined, iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined, iconPath: item.iconPath ? String(item.iconPath) : undefined,
+          }));
+          const driveFiltered = mappedLocal.filter(item => {
+            if (!item.path) return false;
+            return item.path.toUpperCase().startsWith(`${driveLetter}:\\`);
+          });
+          driveFiltered.forEach((item: any) => {
+            const identifier = item.path || item.id;
+            item._score = calculateScore(item.title, item.type, identifier, searchTerm || '', clickHistory);
+          });
+          driveFiltered.sort((a: any, b: any) => b._score - a._score);
+
+          if (driveFiltered.length === 0) {
+            setResults([{ id: 'drive-empty', title: `Keine Ergebnisse auf Drive ${driveLetter}:`, subtitle: searchTerm ? `"${searchTerm}" nicht gefunden` : 'Keine Dateien auf diesem Laufwerk', type: 'system' }]);
+          } else {
+            setResults(driveFiltered);
+            const iconCandidates = driveFiltered.filter(r => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
+            for (const item of iconCandidates) {
+              (window as any).electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
+                if (icon && isActive.current) {
+                  setResults(prev => prev.map(r => r.id === item.id ? { ...r, iconBase64: icon } : r));
+                }
+              }).catch(() => { /* ignore */ });
+            }
+          }
+          if (isActive.current) setLoading(false);
+        }).catch(() => {
+          if (isActive.current) { setLoading(false); setResults([{ id: 'drive-error', title: `Fehler beim Durchsuchen von Drive ${driveLetter}:`, subtitle: 'Laufwerk nicht verfügbar', type: 'system' }]); }
+        });
+        return () => { isActive.current = false };
+      }
     }
 
     // Slash Commands
@@ -329,11 +374,6 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
 
       const cmd = commandRegistry.match(trimmed);
       if (cmd) {
-        if (!isCommandAvailable(cmd.requiresSetting)) {
-          setResults([{ id: 'cmd-disabled', title: 'Befehl deaktiviert', subtitle: 'Aktiviere ihn in den Einstellungen', type: 'system' }]);
-          return;
-        }
-
         const triggerStr = typeof cmd.trigger === 'string' ? cmd.trigger : '';
         const args = trimmed.substring(triggerStr.length);
 
@@ -439,6 +479,11 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
 
     // Standard Search
     setLoading(true);
+
+    // URL Detection: Check if query looks like a direct URL
+    const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/i;
+    const isUrl = urlPattern.test(query.trim()) && !query.trim().includes(' ');
+
     const timer = setTimeout(async () => {
       try {
         const raw = await (window as any).electronAPI.searchEverything(query);
@@ -449,6 +494,19 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
           type: (['game', 'app', 'system', 'folder'].includes(String(item.type || '')) ? String(item.type) : 'file') as SearchResult['type'],
           path: item.path ? String(item.path) : undefined, iconBase64: item.iconBase64 ? String(item.iconBase64) : undefined, iconPath: item.iconPath ? String(item.iconPath) : undefined,
         }));
+
+        // Inject direct URL result if query looks like a URL
+        if (isUrl) {
+          const normalizedUrl = query.trim().startsWith('http') ? query.trim() : `https://${query.trim()}`;
+          mappedLocal.unshift({
+            id: 'direct-url',
+            title: normalizedUrl.replace(/^https?:\/\//, ''),
+            subtitle: 'Im Browser öffnen',
+            type: 'web',
+            path: normalizedUrl,
+            isWeb: true,
+          });
+        }
 
         // 🧠 HIER WIRD SORTIERT (Neue KI/Fuzzy/History Logik)
         mappedLocal.forEach((item: any) => {
@@ -769,7 +827,27 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
     }
 
     if (isHelpView) return out;
-    return out.slice(0, settings.search.maxResults);
+
+    // Apply maxResults limit only to top-level items (not sub-items from expanded folders)
+    const topLevelItems = out.filter(r => !r.isSubItem);
+    const limitedTopLevel = topLevelItems.slice(0, settings.search.maxResults);
+    const subItems = out.filter(r => r.isSubItem);
+
+    // Re-inject sub-items after their parent items in the limited list
+    const finalOut: SearchResult[] = [...limitedTopLevel];
+    for (const subItem of subItems) {
+      // Find parent index in limited list
+      const parentPath = subItem.path?.substring(0, subItem.path.lastIndexOf('\\'));
+      const parentIdx = finalOut.findIndex(r => r.path === parentPath);
+      if (parentIdx !== -1) {
+        finalOut.splice(parentIdx + 1, 0, subItem);
+      } else {
+        // Parent not in limited list, add sub-item at end
+        finalOut.push(subItem);
+      }
+    }
+
+    return finalOut;
   }, [results, expandWeb, query, expandedFolders, folderItemsMap, settings.search.maxResults]);
 
   const quickActions = getQuickActions();
@@ -900,7 +978,9 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
               return (
                 <div key={res.id} className={`result-item ${idx === selectedIndex ? 'selected' : ''} ${res.isSubItem ? 'sub-item' : ''}`} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}>
                   <div className={`result-icon ${res.type}`}>
-                    {res.iconBase64 ? <img src={res.iconBase64} alt="" className="result-icon-img" /> : getIcon(res.type, res.path)}
+                    {res.iconBase64 && res.iconBase64.length > 100 ? (
+                      <img src={res.iconBase64} alt="" className="result-icon-img" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    ) : getIcon(res.type, res.path)}
                   </div>
                   <div className="result-content">
                     <span className="result-title" style={res.isExpandBtn ? { color: 'var(--accent)' } : {}}>{res.title}</span>

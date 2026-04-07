@@ -62,6 +62,26 @@ class CommandRegistry {
       cmd.enabled = enabled;
     }
   }
+
+  // Register external commands (loaded at runtime from user commands folder)
+  registerExternal(commands: Command[]): void {
+    for (const cmd of commands) {
+      // Prefix external command IDs to avoid collisions
+      const externalId = cmd.id.startsWith('ext:') ? cmd.id : `ext:${cmd.id}`;
+      const externalCmd = { ...cmd, id: externalId };
+      this.commands.set(externalId, externalCmd);
+      if (cmd.aliases) {
+        for (const alias of cmd.aliases) {
+          this.commands.set(alias, externalCmd);
+        }
+      }
+    }
+  }
+
+  // Get only external commands
+  getExternal(): readonly Command[] {
+    return this.getAll().filter(cmd => cmd.id.startsWith('ext:'));
+  }
 }
 
 export const commandRegistry = new CommandRegistry();

@@ -23,7 +23,8 @@ process.on('unhandledRejection', (error) => {
 });
 
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
-import { tryGetIconWithRetry } from './utils/icons';
+import { tryGetIconWithRetry, resolveShortcutIcon } from './utils/icons';
+import { loadExternalCommands } from './utils/external-commands';
 import { autoUpdater } from 'electron-updater';
 import { searchEverything, isEverythingRunning } from './indexers/everything';
 import { searchWithWindowsIndex } from './indexers/windowsSearch';
@@ -488,15 +489,7 @@ async function crawl(dir: string, defaultType: 'app' | 'file', priority: number,
           // For shortcuts, try to resolve the target for better icons
           let iconPath: string | undefined;
           if (nameLower.endsWith('.lnk')) {
-            try {
-              const sh = shell.readShortcutLink(fullPath);
-              // Prefer explicit icon, then target
-              if (sh.icon && sh.icon.trim()) {
-                iconPath = sh.icon;
-              } else if (sh.target) {
-                iconPath = sh.target;
-              }
-            } catch (e) { }
+            iconPath = await resolveShortcutIcon(fullPath) || fullPath;
           } else if (nameLower.endsWith('.url')) {
             // Parse .url file to extract IconFile
             try {
@@ -743,11 +736,18 @@ function toggleWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
 
   // Initialize plugin system first (creates plugins folder if needed)
   initializePlugins();
+
+  // Load external commands from user commands folder
+  const externalCmds = await loadExternalCommands();
+  const allExternalCommands = externalCmds.flatMap(ec => ec.commands);
+  if (allExternalCommands.length > 0 && mainWindow) {
+    mainWindow.webContents.send('external-commands', allExternalCommands);
+  }
 
   buildIndex().then(() => {
     // Start file watchers after initial index is built
@@ -1005,12 +1005,7 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
         iconPath = fullPath;
       } else if (type === 'app') {
         if (name.toLowerCase().endsWith('.lnk')) {
-          try {
-            const sh = shell.readShortcutLink(fullPath);
-            iconPath = sh.icon || sh.target || fullPath;
-          } catch {
-            iconPath = fullPath;
-          }
+          iconPath = await resolveShortcutIcon(fullPath) || fullPath;
         } else if (name.toLowerCase().endsWith('.url')) {
           try {
             // Asynchrones Lesen blockiert die UI nicht!

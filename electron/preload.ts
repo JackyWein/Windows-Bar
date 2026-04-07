@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Persistent Data
   readDataSync: (key: string) => ipcRenderer.sendSync('read-data-sync', key),
   writeData: (key: string, data: string) => ipcRenderer.send('write-data', key, data),
+
+  // External Commands
+  onExternalCommands: (callback: (commands: any[]) => void) =>
+    ipcRenderer.on('external-commands', (_event, commands) => callback(commands)),
 });
 
 // Plugin API bridge
