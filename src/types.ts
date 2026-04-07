@@ -20,9 +20,10 @@ export interface SearchResult {
   helpCommands?: string;
   copyToClipboard?: string;
   folderDepth?: number;
+  action?: () => void;
 }
 
-export type ViewMode = 'search' | 'ai' | 'settings';
+export type ViewMode = 'search' | 'ai' | 'settings' | 'notes';
 
 // ========================
 // Theme System
@@ -79,6 +80,7 @@ export interface CommandContext {
   query: string;
   showResults: (results: SearchResult[]) => void;
   navigate: (view: ViewMode) => void;
+  openNote?: (id?: number) => void;
   api: typeof window.electronAPI;
 }
 

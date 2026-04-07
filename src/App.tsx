@@ -5,6 +5,7 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { SearchView } from "./views/SearchView";
 import { SettingsView } from "./views/SettingsView";
 import { AiView } from "./views/AiView";
+import { NotesView } from "./views/NotesView";
 import { registerBuiltinCommands } from "./core/commands/builtin";
 import { builtinThemes, getThemeById } from "./core/settings/themes";
 import type { Theme } from "./types";
@@ -164,6 +165,7 @@ function App() {
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>("search");
+  const [activeNoteId, setActiveNoteId] = useState<number | null>(null);
   const [confirmDialog, confirm] = useConfirm();
 
   // Resolve current theme
@@ -174,6 +176,19 @@ function App() {
   useEffect(() => {
     applyAllAppearance(settings, theme);
   }, [settings, theme]);
+
+  // Reset to search view when the app window gains focus (e.g. after Alt+Space hide/show)
+  useEffect(() => {
+    const handleFocus = () => {
+      setViewMode('search');
+      setActiveNoteId(null);
+      try {
+        window.electronAPI.resizeWindow(750, 600);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   // Persist settings
   useEffect(() => {
@@ -216,12 +231,37 @@ function App() {
     }
   };
 
+  // Global Escape handler: go back to search from any view (but not when modals are open)
+  useEffect(() => {
+    const handleGlobalEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('.modal-backdrop, .confirm-backdrop')) return;
+      if (viewMode !== 'search') {
+        e.preventDefault();
+        backToSearch();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalEscape);
+    return () => window.removeEventListener('keydown', handleGlobalEscape);
+  }, [viewMode, backToSearch]);
+
   const updateAiSettings = useCallback((aiSettings: AISettings) => {
     setSettings((prev) => ({ ...prev, ai: aiSettings }));
   }, []);
 
   const openSettings = () => {
     setViewMode("settings");
+    try {
+      window.electronAPI.resizeWindow(850, 700);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const openNote = (id?: number) => {
+    if (id !== undefined) setActiveNoteId(id);
+    else setActiveNoteId(null);
+    setViewMode("notes");
     try {
       window.electronAPI.resizeWindow(850, 700);
     } catch {
@@ -238,6 +278,11 @@ function App() {
     });
     if (ok) {
       localStorage.clear();
+      if (window.electronAPI?.writeData) {
+        window.electronAPI.writeData("windowsbar_settings", JSON.stringify(defaultSettings));
+        window.electronAPI.writeData("windowsbar_notes", "[]");
+        window.electronAPI.writeData("windowsbar_clipboard_history", "[]");
+      }
       setSettings(defaultSettings);
     }
   };
@@ -264,11 +309,19 @@ function App() {
           onClearData={clearAllData}
         />
       )}
+      {viewMode === "notes" && (
+        <NotesView
+          settings={settings}
+          onBack={backToSearch}
+          initialNoteId={activeNoteId}
+        />
+      )}
       {viewMode === "search" && (
         <SearchView
           settings={settings}
           onOpenAI={openAI}
           onOpenSettings={openSettings}
+          onOpenNote={openNote}
         />
       )}
       {confirmDialog}

@@ -12,7 +12,15 @@ const webCommands: readonly Command[] = [
       const preview = text.length > 20 ? text.substring(0, 20) + '...' : text;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(text)}`;
       return {
-        results: [{ id: 'cmd-qr', title: `QR-Code: ${preview}`, subtitle: 'Enter um zu öffnen', type: 'web', path: qrUrl, isWeb: true }],
+        results: [{ 
+          id: 'cmd-qr', 
+          title: `QR-Code: ${preview}`, 
+          subtitle: 'Enter drücken um in groß zu öffnen, oder scannen', 
+          type: 'web', 
+          path: qrUrl, 
+          isWeb: true,
+          iconBase64: qrUrl
+        }],
       };
     },
     enabled: true,

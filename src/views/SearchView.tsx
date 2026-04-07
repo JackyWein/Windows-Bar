@@ -14,6 +14,7 @@ interface SearchViewProps {
   settings: AppSettings;
   onOpenAI: () => void;
   onOpenSettings: () => void;
+  onOpenNote: (id?: number) => void;
 }
 
 // Focus zones for Tab navigation
@@ -114,7 +115,7 @@ function calculateScore(itemTitle: string, itemType: string, itemIdOrPath: strin
 }
 
 
-export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewProps) {
+export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [expandWeb, setExpandWeb] = useState(false);
@@ -196,8 +197,9 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     query,
     showResults: (newResults: SearchResult[]) => setResults(newResults),
     navigate: () => { },
+    openNote: onOpenNote,
     api: (window as any).electronAPI,
-  }), [settings, query]);
+  }), [settings, query, onOpenNote]);
 
   // Check if a command's required setting is enabled
   const isCommandAvailable = useCallback((requiresSetting: string | undefined): boolean => {
@@ -535,6 +537,11 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     // Tracke den Klick für unser "Usage-Based Scoring"
     trackActionClick(result);
 
+    if (result.action) {
+      result.action();
+      return;
+    }
+
     // Folder Expansion
     if (result.type === 'folder' && result.path) {
       const isExpanded = expandedFolders.includes(result.path);
@@ -717,8 +724,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
     if (query.startsWith('/g ')) return results;
 
     const isHelpView = results.some(r => r.isHelpCategory || r.id.startsWith('help-cmd-'));
-    const localAndPriority = results.filter(r => r.type !== 'web' || !r.isWeb || r.id === 'web-inline');
-    const webClutter = results.filter(r => r.type === 'web' && r.isWeb && r.id !== 'web-inline');
+    const localAndPriority = results.filter(r => r.type !== 'web' || !r.isWeb || r.id === 'web-inline' || r.id.startsWith('cmd-'));
+    const webClutter = results.filter(r => r.type === 'web' && r.isWeb && r.id !== 'web-inline' && !r.id.startsWith('cmd-'));
 
     let out: SearchResult[] = [...localAndPriority];
 
@@ -854,6 +861,21 @@ export function SearchView({ settings, onOpenAI, onOpenSettings }: SearchViewPro
                   const data = JSON.parse(res.path);
                   return <WeatherCard key={res.id} data={data} selected={idx === selectedIndex} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} />;
                 } catch { return null; }
+              }
+
+              if (res.id === 'cmd-qr' && res.path) {
+                return (
+                  <div key={res.id} className={`result-item ${idx === selectedIndex ? 'selected' : ''}`} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px', gap: '12px' }}>
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
+                      <img src={res.path} alt="QR Code" style={{ width: '200px', height: '200px', display: 'block' }} />
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div className="result-title" style={{ fontSize: '16px', fontWeight: 600, marginBottom: '4px' }}>{res.title}</div>
+                      <div className="result-subtitle" style={{ fontSize: '12px' }}>{res.subtitle}</div>
+                    </div>
+                    <span className="result-enter" style={{ position: 'absolute', right: '16px', bottom: '16px' }}>↵</span>
+                  </div>
+                );
               }
 
               if (res.isHelpCategory) {

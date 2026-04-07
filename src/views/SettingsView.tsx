@@ -48,18 +48,38 @@ const settingsCategories = [
 
 export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onClearData }: SettingsViewProps) {
   const [activeCategory, setActiveCategory] = useState('themes');
+  const [appVersion, setAppVersion] = useState('1.0.0');
   const [plugins, setPlugins] = useState<Array<{ id: string; name: string; version: string; description: string; author: string; enabled: boolean }>>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [confirmDialog, confirm] = useConfirm();
 
   // Update check state
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
+  const [installRequested, setInstallRequested] = useState(false);
   const [updateResult, setUpdateResult] = useState<{
     available: boolean;
     currentVersion?: string;
     latestVersion?: string;
     error?: string;
+    downloaded?: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    window.electronAPI?.getAppVersion?.().then(v => setAppVersion(v)).catch(() => {});
+    // Listen for auto-updater events
+    if (window.electronAPI?.onUpdateProgress) {
+      window.electronAPI.onUpdateProgress((percent: number) => {
+        setUpdateProgress(percent);
+      });
+    }
+    if (window.electronAPI?.onUpdateDownloaded) {
+      window.electronAPI.onUpdateDownloaded(() => {
+        setUpdateDownloaded(true);
+      });
+    }
+  }, []);
 
   // Update setting helper for nested objects
   const updateAppearance = (key: string, value: unknown) => onUpdateSetting('appearance', key, value);
@@ -1237,10 +1257,14 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     const handleCheckUpdate = async () => {
       setUpdateChecking(true);
       setUpdateResult(null);
+      setUpdateProgress(null);
+      setInstallRequested(false);
       try {
-        // @ts-expect-error - checkForUpdates exists at runtime
         const result = await window.electronAPI.checkForUpdates();
         setUpdateResult(result);
+        if (result?.downloaded) {
+          setUpdateDownloaded(true);
+        }
       } catch {
         setUpdateResult({ available: false, error: 'Fehler beim Prüfen auf Updates' });
       } finally {
@@ -1249,9 +1273,8 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     };
 
     const handleInstallUpdate = () => {
-      // @ts-expect-error - installUpdate exists at runtime
+      setInstallRequested(true);
       if (window.electronAPI?.installUpdate) {
-        // @ts-expect-error - installUpdate exists at runtime
         window.electronAPI.installUpdate();
       }
     };
@@ -1263,7 +1286,7 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
           <div className="about-card">
             <div className="about-icon"><Monitor size={48} /></div>
             <h3>Windows Bar</h3>
-            <p className="about-version">Version 1.0.6</p>
+            <p className="about-version">Version {appVersion}</p>
             <p className="about-desc">
               Ein schneller und eleganter App-Launcher für Windows mit
               integrierter KI, Wetter-Anzeige und vielen nützlichen Befehlen.
@@ -1300,10 +1323,33 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
                   <span className="update-status-version">
                     Version {updateResult.latestVersion} (aktuell: {updateResult.currentVersion})
                   </span>
-                  <button className="update-install-btn" onClick={handleInstallUpdate}>
-                    <Download size={14} />
-                    Jetzt installieren
-                  </button>
+                  
+                  {updateDownloaded || updateResult.downloaded ? (
+                    <button className="update-install-btn" onClick={handleInstallUpdate} disabled={installRequested}>
+                      <Download size={14} />
+                      {installRequested ? 'Wird neugestartet...' : 'Jetzt neustarten & installieren'}
+                    </button>
+                  ) : (
+                    <>
+                      {updateProgress !== null ? (
+                        <div className="update-progress-container" style={{ width: '100%', marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                            <span>Herunterladen...</span>
+                            <span>{Math.round(updateProgress)}%</span>
+                          </div>
+                          <div style={{ width: '100%', height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ width: `${updateProgress}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s' }}></div>
+                          </div>
+                          {installRequested && <div style={{ fontSize: '12px', marginTop: '6px', color: 'var(--text-muted)' }}>App startet neu, sobald der Download abgeschlossen ist.</div>}
+                        </div>
+                      ) : (
+                        <button className="update-install-btn" onClick={handleInstallUpdate} disabled={installRequested}>
+                          <Download size={14} />
+                          {installRequested ? 'Wird vorbereitet...' : 'Jetzt installieren'}
+                        </button>
+                      )}
+                    </>
+                  )}
                 </>
               ) : updateResult.error ? (
                 <span className="update-status-text">⚠️ {updateResult.error}</span>

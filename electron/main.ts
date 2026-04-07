@@ -1,8 +1,27 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, safeStorage } from 'electron';
+
+// Handle squirrel events first
+if (process.argv.length >= 2) {
+  const arg = process.argv[1];
+  if (arg.startsWith('--squirrel-')) {
+    app.quit();
+    process.exit(0);
+  }
+}
+
 import { join } from 'path';
-import { promises as fs, watch as fsWatch } from 'fs';
+import { promises as fs, watch as fsWatch, readFileSync, writeFileSync } from 'fs';
 import type { FSWatcher } from 'fs';
 import { homedir } from 'os';
+
+process.on('uncaughtException', (error) => {
+  console.error('[Uncaught Exception]', error);
+});
+
+process.on('unhandledRejection', (error) => {
+  console.error('[Unhandled Rejection]', error);
+});
+
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
 import { tryGetIconWithRetry } from './utils/icons';
 import { autoUpdater } from 'electron-updater';
@@ -616,6 +635,9 @@ async function checkForUpdates() {
   }
 }
 
+let updateReady = false;
+let installOnReady = false;
+
 // Auto-updater event handlers (silent - no UI notifications)
 autoUpdater.on('checking-for-update', () => {
   console.log('[WindowsBar] Checking for update...');
@@ -632,11 +654,21 @@ autoUpdater.on('update-not-available', () => {
 autoUpdater.on('download-progress', (progressObj) => {
   const percent = Math.round(progressObj.percent);
   console.log(`[WindowsBar] Downloading update: ${percent}% (${progressObj.transferred}/${progressObj.total} bytes)`);
+  if (mainWindow) {
+    mainWindow.webContents.send('update-progress', progressObj.percent);
+  }
 });
 
 autoUpdater.on('update-downloaded', (info) => {
   console.log('[WindowsBar] Update downloaded:', info.version);
   console.log('[WindowsBar] Update will be installed on next app restart');
+  updateReady = true;
+  if (installOnReady) {
+    autoUpdater.quitAndInstall();
+  }
+  if (mainWindow) {
+    mainWindow.webContents.send('update-downloaded');
+  }
 });
 
 autoUpdater.on('error', (error) => {
@@ -686,6 +718,10 @@ function createWindow() {
   } else {
     mainWindow.loadFile(join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[RENDERER] ${message} (${sourceId}:${line})`);
+  });
 
   mainWindow.on('blur', () => {
     // Don't hide if devtools are focused
@@ -1679,10 +1715,19 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
-// Lade das Update erst herunter, wenn der Nutzer auf den Button klickt
+// Installiere das Update, wenn bereit
 ipcMain.on('install-update', () => {
-  console.log('[WindowsBar] Starte Update-Download...');
-  autoUpdater.downloadUpdate();
+  console.log('[WindowsBar] Installiere Update (oder warte auf Download)...');
+  if (updateReady) {
+    autoUpdater.quitAndInstall();
+  } else {
+    installOnReady = true;
+  }
+});
+
+// App-Version abrufen
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
 });
 // Update system settings from renderer
 ipcMain.on('update-system-settings', (_event, settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) => {
@@ -1728,5 +1773,28 @@ ipcMain.on('update-system-settings', (_event, settings: { autoStart?: boolean; a
       }
       console.log(`[WindowsBar] Overlay fullscreen ${settings.overlayFullscreen ? 'enabled' : 'disabled'}`);
     }
+  }
+});
+
+// ========================
+// PERSISTENT DATA STORAGE
+// ========================
+
+ipcMain.on('read-data-sync', (event, key: string) => {
+  try {
+    const filePath = join(app.getPath('userData'), `${key}.json`);
+    const data = readFileSync(filePath, 'utf-8');
+    event.returnValue = data;
+  } catch {
+    event.returnValue = null;
+  }
+});
+
+ipcMain.on('write-data', (_event, key: string, data: string) => {
+  try {
+    const filePath = join(app.getPath('userData'), `${key}.json`);
+    writeFileSync(filePath, data, 'utf-8');
+  } catch (error) {
+    console.error(`[WindowsBar] Error writing data for ${key}:`, error);
   }
 });

@@ -1,5 +1,24 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
+
+## [1.0.9] - 2026-04-07
+
+**✨ Neue Features & Highlights**
+
+* **Komplett neuer Notizen-View:** Die Notizen-Ansicht wurde von Grund auf neu gestaltet mit modernem Zwei-Panel-Layout, integrierter Suchfunktion zum Filtern von Notizen, relativen Zeitstempeln ("Vor 5 Min."), Zeichen-/Zeilenzähler und Kopieren-Button.
+
+* **Globale Escape-Shortcuts:** Escape funktioniert jetzt von jeder Ansicht aus (Notizen, Einstellungen, KI-Chat) um direkt zurück zur Suche zu gelangen – komplett ohne Maus.
+
+* **Dynamische Versionsanzeige:** Die Versionsnummer in der Über-Sektion wird jetzt automatisch aus der App ausgelesen und ist nicht mehr hardcodiert.
+
+**🐛 Bugfixes**
+
+* **Notizen-Erstellen-Fix:** Der "Neue Notiz erstellen" Button funktionierte nicht mehr und wurde repariert.
+
+* **Notizen-Bearbeitungs-Fix:** Ausgewählte Notizen konnten nicht bearbeitet werden, da die Textarea fälschlicherweise im ReadOnly-Modus war.
+
+* **App-Start Reset:** Nach dem Verstecken der App (Alt+Space) und erneutem Öffnen wurde die zuletzt aktive Ansicht angezeigt. Die App startet jetzt immer zuverlässig mit der Suchleiste.
+
 ## [1.0.8] - 2026-04-08
 
 **✨ Neue Features & Highlights**

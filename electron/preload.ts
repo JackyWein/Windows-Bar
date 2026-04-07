@@ -65,6 +65,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Update Check
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.send('install-update'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdateProgress: (callback: (percent: number) => void) => 
+    ipcRenderer.on('update-progress', (_event, percent) => callback(percent)),
+  onUpdateDownloaded: (callback: () => void) => 
+    ipcRenderer.on('update-downloaded', () => callback()),
+
+  // Persistent Data
+  readDataSync: (key: string) => ipcRenderer.sendSync('read-data-sync', key),
+  writeData: (key: string, data: string) => ipcRenderer.send('write-data', key, data),
 });
 
 // Plugin API bridge

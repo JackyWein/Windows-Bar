@@ -52,6 +52,17 @@ interface ElectronAPI {
   // System Settings
   getSystemSettings: () => Promise<{ autoStart: boolean; alwaysOnTop: boolean; overlayFullscreen: boolean }>;
   updateSystemSettings: (settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) => void;
+
+  // Updates
+  checkForUpdates: () => Promise<{ available: boolean; currentVersion?: string; latestVersion?: string; error?: string; downloaded?: boolean }>;
+  installUpdate: () => void;
+  getAppVersion: () => Promise<string>;
+  onUpdateProgress: (callback: (percent: number) => void) => void;
+  onUpdateDownloaded: (callback: () => void) => void;
+
+  // Persistent Data
+  readDataSync: (key: string) => string | null;
+  writeData: (key: string, data: string) => void;
 }
 
 interface PluginAPI {
