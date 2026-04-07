@@ -10,13 +10,14 @@ import {
 
 import { commandRegistry } from '../core/commands/registry';
 import { CompactPlayer } from '../components/CompactPlayer';
+import { searchWithPlugins } from '../core/plugins/loader';
 
 interface SearchViewProps {
   settings: AppSettings;
   onOpenAI: () => void;
   onOpenSettings: () => void;
   onOpenNote: (id?: number) => void;
-  onOpenYouTubeMusic: () => void;
+  onOpenMediaControl: () => void;
 }
 
 // Focus zones for Tab navigation
@@ -117,7 +118,7 @@ function calculateScore(itemTitle: string, itemType: string, itemIdOrPath: strin
 }
 
 
-export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onOpenYouTubeMusic }: SearchViewProps) {
+export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onOpenMediaControl }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [expandWeb, setExpandWeb] = useState(false);
@@ -376,6 +377,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
       if (cmdStr === 'help' || cmdStr === '?') trimmed = '/';
 
       const cmd = commandRegistry.match(trimmed);
+      console.log('[SearchView] match result:', cmd?.id, 'input:', trimmed);
       if (cmd) {
         const triggerStr = typeof cmd.trigger === 'string' ? cmd.trigger : '';
         const args = trimmed.substring(triggerStr.length);
@@ -482,6 +484,13 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
 
     // Standard Search
     setLoading(true);
+
+    // Run plugin search providers
+    searchWithPlugins(query).then(pluginResults => {
+      if (isActive.current && pluginResults.length > 0) {
+        setResults(prev => [...pluginResults, ...prev]);
+      }
+    }).catch(() => {});
 
     // URL Detection: Check if query looks like a direct URL
     const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/i;
@@ -1010,7 +1019,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
         {/* Compact Plugin Players */}
         {compactPlayerVisible && (
           <div className="compact-plugins-container">
-            <CompactPlayer onExpand={onOpenYouTubeMusic} onVisibilityChange={setCompactPlayerVisible} />
+            <CompactPlayer onExpand={onOpenMediaControl} onVisibilityChange={setCompactPlayerVisible} />
           </div>
         )}
       </div>

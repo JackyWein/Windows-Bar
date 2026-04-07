@@ -17,6 +17,26 @@ const pluginStates = new Map<string, PluginState>();
 let onNavigateCallback: ((view: ViewMode) => void) | null = null;
 let onShowResultsCallback: ((results: SearchResult[]) => void) | null = null;
 
+// Helper to recursively restore actions from their IPC string representation
+function restorePluginActions(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'object') {
+    if (obj.__plugin_action_id && typeof obj.__plugin_action_id === 'string') {
+      const actionId = obj.__plugin_action_id;
+      return () => window.pluginAPI.executeResultAction(actionId);
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(item => restorePluginActions(item));
+    }
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = restorePluginActions(value);
+    }
+    return result;
+  }
+  return obj;
+}
+
 export function initPluginLoader(
   navigate: (view: ViewMode) => void,
   showResults: (results: SearchResult[]) => void
@@ -39,10 +59,16 @@ export function initPluginLoader(
       ...command,
       id: fullId,
       handler: async (args: string, ctx) => {
-        return command.handler(args, {
-          ...ctx,
-          pluginSettings: pluginState.settings,
-        });
+        console.log(`[PluginLoader] Executing command ${fullId} with args:`, args);
+        try {
+          const result = await window.pluginAPI.invokeCommand(pluginId, command.id, args);
+          const restoredResult = restorePluginActions(result);
+          console.log(`[PluginLoader] Command ${fullId} result:`, restoredResult);
+          return restoredResult;
+        } catch (err) {
+          console.error(`[PluginLoader] Command ${fullId} error:`, err);
+          throw err;
+        }
       },
       enabled: true,
     };
@@ -61,8 +87,9 @@ export function initPluginLoader(
   // Listen for plugin results
   window.pluginAPI.onPluginResults(({ pluginId, results }) => {
     console.log(`[PluginLoader] Results from ${pluginId}: ${results.length} items`);
+    const restoredResults = restorePluginActions(results) as SearchResult[];
     if (onShowResultsCallback) {
-      onShowResultsCallback(results as SearchResult[]);
+      onShowResultsCallback(restoredResults);
     }
   });
 
@@ -108,6 +135,8 @@ export function initPluginLoader(
       state.enabled = true;
       state.commands = [];
     }
+    // Re-register commands after unregistering
+    window.pluginAPI.requestCommands().catch(() => {});
   });
 
   // Request all plugins to re-register their commands (called on init)
@@ -177,22 +206,8 @@ export async function searchWithPlugins(query: string): Promise<SearchResult[]> 
     for (const provider of state.searchProviders) {
       if (provider.triggers && provider.triggers.some((t: string) => query.startsWith(t))) {
         try {
-          const providerResults = await provider.search(query, {
-            settings: {} as any,
-            pluginSettings: state.settings,
-            navigate: onNavigateCallback || (() => {}),
-            showResults: onShowResultsCallback || (() => {}),
-            api: window.electronAPI,
-            logger: {
-              log: (...args: any[]) => console.log(`[Plugin:${pluginId}]`, ...args),
-              warn: (...args: any[]) => console.warn(`[Plugin:${pluginId}]`, ...args),
-              error: (...args: any[]) => console.error(`[Plugin:${pluginId}]`, ...args),
-            },
-            updateSetting: async (key: string, value: unknown) => {
-              state.settings[key] = value;
-              await window.pluginAPI.updateSettings(pluginId, state.settings);
-            },
-          });
+          const providerId = provider.id || provider.name || 'default';
+          const providerResults = await window.pluginAPI.invokeSearch(pluginId, providerId, query);
           results.push(...(providerResults as SearchResult[]));
         } catch (err) {
           console.error(`[PluginLoader] Search provider ${provider.name} error:`, err);

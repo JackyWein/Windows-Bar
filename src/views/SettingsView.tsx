@@ -172,18 +172,22 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     setPluginsLoading(true);
     window.pluginAPI.list()
       .then((list: unknown[]) => {
-        setPlugins((list as Record<string, unknown>[]).map((p) => ({
-          id: String(p.id),
-          name: String(p.name),
-          version: String(p.version),
-          description: String(p.description ?? ''),
-          author: String(p.author ?? ''),
-          enabled: Boolean(p.enabled),
-        })));
+        setPlugins((list as Record<string, unknown>[]).map((p) => {
+          const pid = String(p.id);
+          const enabledMap = settings.plugins?.enabled || {};
+          return {
+            id: pid,
+            name: String(p.name),
+            version: String(p.version),
+            description: String(p.description ?? ''),
+            author: String(p.author ?? ''),
+            enabled: enabledMap[pid] !== false,
+          };
+        }));
       })
       .catch(() => setPlugins([]))
       .finally(() => setPluginsLoading(false));
-  }, [activeCategory]);
+  }, [activeCategory, settings.plugins?.enabled]);
 
   // Handle theme selection
   const handleThemeSelect = (themeId: string) => {
@@ -749,14 +753,18 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
           try {
             await window.pluginAPI.install(folder);
             const list = await window.pluginAPI.list();
-            setPlugins((list as Record<string, unknown>[]).map((p) => ({
-              id: String(p.id),
-              name: String(p.name),
-              version: String(p.version),
-              description: String(p.description ?? ''),
-              author: String(p.author ?? ''),
-              enabled: Boolean(p.enabled),
-            })));
+            setPlugins((list as Record<string, unknown>[]).map((p) => {
+              const pid = String(p.id);
+              const enabledMap = settings.plugins?.enabled || {};
+              return {
+                id: pid,
+                name: String(p.name),
+                version: String(p.version),
+                description: String(p.description ?? ''),
+                author: String(p.author ?? ''),
+                enabled: enabledMap[pid] !== false,
+              };
+            }));
           } catch (e) {
             console.error('Plugin install error:', e);
           }
@@ -886,14 +894,18 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
                     onClick={async () => {
                       await window.pluginAPI.reload(plugin.id);
                       const list = await window.pluginAPI.list();
-                      setPlugins((list as Record<string, unknown>[]).map((p) => ({
-                        id: String(p.id),
-                        name: String(p.name),
-                        version: String(p.version),
-                        description: String(p.description ?? ''),
-                        author: String(p.author ?? ''),
-                        enabled: Boolean(p.enabled),
-                      })));
+                      setPlugins((list as Record<string, unknown>[]).map((p) => {
+                        const pid = String(p.id);
+                        const enabledMap = settings.plugins?.enabled || {};
+                        return {
+                          id: pid,
+                          name: String(p.name),
+                          version: String(p.version),
+                          description: String(p.description ?? ''),
+                          author: String(p.author ?? ''),
+                          enabled: enabledMap[pid] !== false,
+                        };
+                      }));
                     }}
                     title="Plugin neu laden"
                   >

@@ -79,6 +79,9 @@ interface PluginAPI {
   updateSettings: (id: string, settings: Record<string, unknown>) => Promise<{ success: boolean }>;
   getManifest: (id: string) => Promise<unknown>;
   invokeMainAction: (pluginId: string, action: string, args?: any) => Promise<any>;
+  invokeCommand: (pluginId: string, commandId: string, args: string) => Promise<any>;
+  invokeSearch: (pluginId: string, providerId: string, query: string) => Promise<any>;
+  executeResultAction: (actionId: string) => Promise<any>;
 
    // Plugin event listeners
    onPluginList: (callback: (plugins: any[]) => void) => void;

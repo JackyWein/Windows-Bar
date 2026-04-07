@@ -6,7 +6,7 @@ import { SearchView } from "./views/SearchView";
 import { SettingsView } from "./views/SettingsView";
 import { AiView } from "./views/AiView";
 import { NotesView } from "./views/NotesView";
-import { YouTubeMusicView } from "./views/YouTubeMusicView";
+import { MediaControlView } from "./views/MediaControlView";
 import { registerBuiltinCommands } from "./core/commands/builtin";
 import { initExternalCommands } from "./core/commands/external-loader";
 import { initPluginLoader } from "./core/plugins/loader";
@@ -281,8 +281,8 @@ function App() {
     }
   };
 
-  const openYouTubeMusic = () => {
-    setViewMode("youtube-music");
+  const openMediaControl = () => {
+    setViewMode("media-control");
     try {
       window.electronAPI.resizeWindow(850, 700);
     } catch {
@@ -337,8 +337,8 @@ function App() {
           initialNoteId={activeNoteId}
         />
       )}
-      {viewMode === "youtube-music" && (
-        <YouTubeMusicView
+      {viewMode === "media-control" && (
+        <MediaControlView
           onBack={backToSearch}
         />
       )}
@@ -348,7 +348,7 @@ function App() {
           onOpenAI={openAI}
           onOpenSettings={openSettings}
           onOpenNote={openNote}
-          onOpenYouTubeMusic={openYouTubeMusic}
+          onOpenMediaControl={openMediaControl}
         />
       )}
       {confirmDialog}

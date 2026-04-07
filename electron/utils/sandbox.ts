@@ -91,27 +91,26 @@ export async function executeInSandbox(
   timeoutMs: number = 5000
 ): Promise<SandboxResult> {
   try {
-    // Read plugin file
     const code = await fs.readFile(pluginPath, 'utf-8');
 
-    // Wrap code to capture module.exports
-    const wrappedCode = `(function(require, module, exports) {
-      ${code}
-    })`;
+    // Wrap code to capture module.exports - also execute it to set module.exports
+    const wrappedCode = `
+      (function(require, module, exports) {
+        ${code}
+      })(require, module, exports);
+      module.exports;
+    `;
 
-    // Create safe context
     const context = createSafeContext(sandboxCtx);
 
-    // Create and run script
     const script = new Script(wrappedCode);
-    script.runInContext(context, { timeout: timeoutMs });
+    const result = script.runInContext(context, { timeout: timeoutMs });
 
-    // Extract exports
-    const exports = context.module.exports;
+    console.log('[Sandbox] result:', result, 'module.exports:', context.module.exports);
 
     return {
       success: true,
-      exports: exports?.default || exports,
+      exports: result || context.module.exports,
     };
   } catch (error) {
     return {

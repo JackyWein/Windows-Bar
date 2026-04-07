@@ -23,7 +23,7 @@ export interface SearchResult {
   action?: () => void;
 }
 
-export type ViewMode = 'search' | 'ai' | 'settings' | 'notes' | 'youtube-music';
+export type ViewMode = 'search' | 'ai' | 'settings' | 'notes' | 'media-control';
 
 // ========================
 // Theme System

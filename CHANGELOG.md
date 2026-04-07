@@ -1,6 +1,56 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.1.1] - 2026-04-07
+
+**🧹 Bereinigung & Wartung**
+
+* Code bereinigt: Unbenutzte Variablen und leere Catch-Blöcke entfernt
+* Lint-Fehler in main.ts, everything.ts und windowsSearch.ts behoben
+* Projekt bereinigt: `.opencode`, `Bug Screenshot`, `dev_logs.txt`, `tmp.json`, `tmp3.json` entfernt
+* TypeScript-Typfehler behoben
+
+**📦 Build-Optimierung**
+
+* `plugins/` Ordner wird jetzt korrekt in die EXE bundled
+* Optimierte Build-Konfiguration
+
+## [1.1.0] - 2026-04-07
+
+**✨ Neue Features & Highlights**
+
+* **Media Control Plugin:** Systemweite Mediensteuerung für Spotify, VLC, Windows Media Player und andere Player. Unterstützt folgende Befehle:
+  - `/pause` - Wiedergabe pausieren
+  - `/play` - Wiedergabe fortsetzen
+  - `/next` - Nächster Titel
+  - `/prev` - Vorheriger Titel
+  - `/now` - Aktuellen Status anzeigen
+
+* **Media Control View:** Neue View für erweiterte Mediensteuerung mit Play/Pause, Previous/Next Buttons und Volume-Slider.
+
+* **Compact Player:** Der kompakte Player unter der Suchleiste zeigt jetzt aktive Medienwiedergabe an und ermöglicht Steuerung direkt aus der Suchleiste.
+
+**🔄 Refactoring**
+
+* **YouTube Music → Media Control:** Das YouTube Music Plugin wurde durch ein generisches Media Control Plugin ersetzt, das mit allen Media-Playern auf Windows funktioniert (Spotify, VLC, Windows Media Player, Groove Music, etc.).
+
+* **View-Umbenennung:** `youtube-music` View wurde in `media-control` umbenannt.
+
+* **Plugin-System Verbesserungen:** Erweiterte Debug-Logging für Plugin-Laden und Action-Registrierung.
+
+**🧹 Bereinigung**
+
+* Entfernt: `.opencode` Ordner
+* Entfernt: `Bug Screenshot` Ordner
+* Entfernt: `dev_logs.txt`, `eslint_out.json`, `tmp.json`, `tmp3.json`
+* Entfernt: Altes YouTube Music Plugin (`plugins/youtube-music/`)
+* Entfernt: `YouTubeMusicView.tsx`
+
+**🐛 Bugfixes**
+
+* Media-Control Commands funktionieren jetzt mit korrekter Error-Handhabung.
+* Plugin-Action-Registrierung zeigt jetzt Debug-Logs in der Console.
+
 ## [1.0.9] - 2026-04-07
 
 **✨ Neue Features & Highlights**

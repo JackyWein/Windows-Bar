@@ -105,7 +105,7 @@ function getWatchPaths(): string[] {
   for (const pf of userFolderNames) {
     try {
       paths.push(app.getPath(pf));
-    } catch (e) { }
+    } catch { /* ignore invalid path */ }
   }
 
   // Start Menu
@@ -281,13 +281,13 @@ function getSteamPath(): string | null {
     const out = execSync('reg query HKCU\\Software\\Valve\\Steam /v SteamPath').toString();
     const match = out.match(/SteamPath\s+REG_SZ\s+(.+)/);
     if (match) return match[1].trim().replace(/\//g, '\\');
-  } catch (e) { }
+  } catch { /* ignore */ }
   // Common fallbacks
   const fallbacks = ['C:\\Program Files (x86)\\Steam', 'C:\\Program Files\\Steam', 'D:\\Steam', 'E:\\Steam'];
   for (const f of fallbacks) {
     try {
       if (require('fs').existsSync(f)) return f;
-    } catch (e) { }
+    } catch { /* ignore */ }
   }
   return null;
 }
@@ -312,7 +312,7 @@ async function scanSteamGames() {
         if (p && !libraryRoots.includes(p)) libraryRoots.push(p);
       }
     }
-  } catch (e) {
+  } catch {
     console.log('[WindowsBar] Could not read libraryfolders.vdf');
   }
 
@@ -343,9 +343,9 @@ async function scanSteamGames() {
               priority: 0
             });
           }
-        } catch (e) { }
+        } catch { /* ignore */ }
       }
-    } catch (e) { }
+    } catch { /* ignore */ }
   }
 }
 
@@ -366,7 +366,7 @@ async function scanEpicGames() {
           });
         }
       }
-    } catch (e) { }
+    } catch { /* ignore */ }
   }
 }
 
@@ -387,7 +387,7 @@ async function scanRiotGames() {
           });
         }
       }
-    } catch (e) { }
+    } catch { /* ignore */ }
   }
 }
 
@@ -713,7 +713,7 @@ function createWindow() {
     mainWindow.loadFile(join(__dirname, '../dist/index.html'));
   }
 
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+  mainWindow.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
     console.log(`[RENDERER] ${message} (${sourceId}:${line})`);
   });
 
@@ -724,7 +724,7 @@ function createWindow() {
   });
 
   mainWindow.on('ready-to-show', () => {
-    if (isDev) mainWindow?.show();
+    // Hidden initially. Shown via Alt+Space toggle.
   });
 }
 
@@ -748,25 +748,33 @@ app.whenReady().then(async () => {
     const pluginsDir = join(app.getPath('userData'), 'plugins');
     await fs.mkdir(pluginsDir, { recursive: true });
     const bundledPluginsDir = join(__dirname, '..', 'plugins');
-    const ytmManifestPath = join(bundledPluginsDir, 'youtube-music', 'manifest.json');
-    const ytmDestDir = join(pluginsDir, 'youtube-music');
-    // Check if youtube-music plugin already exists in user plugins dir
-    try {
-      await fs.access(join(ytmDestDir, 'manifest.json'));
-    } catch {
-      // Plugin not installed yet, copy from bundled
+    
+    // Read bundled plugins directory
+    const bundledEntries = await fs.readdir(bundledPluginsDir, { withFileTypes: true });
+    
+    for (const entry of bundledEntries) {
+      if (!entry.isDirectory()) continue;
+      
+      const manifestPath = join(bundledPluginsDir, entry.name, 'manifest.json');
+      const destDir = join(pluginsDir, entry.name);
+      
+      // Check if plugin already exists
       try {
-        await fs.access(ytmManifestPath);
-        await fs.cp(join(bundledPluginsDir, 'youtube-music'), ytmDestDir, { recursive: true });
-        // Create default settings
-        await fs.writeFile(join(ytmDestDir, 'settings.json'), JSON.stringify({
-          compactMode: false,
-          autoPlay: false,
-          quality: 'high',
-        }, null, 2));
-        console.log('[WindowsBar] Auto-installed YouTube Music plugin');
+        await fs.access(join(destDir, 'manifest.json'));
+        continue; // Already installed
       } catch {
-        console.log('[WindowsBar] Bundled YouTube Music plugin not found');
+        // Not installed, copy from bundled
+        try {
+          await fs.access(manifestPath);
+          await fs.cp(join(bundledPluginsDir, entry.name), destDir, { recursive: true });
+          
+          // Create default settings file
+          const settingsPath = join(destDir, 'settings.json');
+          await fs.writeFile(settingsPath, JSON.stringify({}, null, 2));
+          console.log(`[WindowsBar] Auto-installed plugin: ${entry.name}`);
+        } catch {
+          console.log(`[WindowsBar] Could not install plugin: ${entry.name}`);
+        }
       }
     }
   } catch (err) {

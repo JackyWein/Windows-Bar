@@ -120,8 +120,8 @@ async function searchWithDirectScan(query: string, maxResults: number): Promise<
                 # Search root directories first (faster)
                 Get-ChildItem -Path "${drive}\\" -Directory -ErrorAction SilentlyContinue | 
                     Where-Object { 
-                        $_.Name -notmatch '^(\\\$|System Volume Information|Recovery|\\\$Recycle|Windows|Program Files|ProgramData|AppData)'
-                    } | 
+                        $_.Name -notmatch '^($|System Volume Information|Recovery|$Recycle|Windows|Program Files|ProgramData|AppData)'
+                    } |
                     ForEach-Object {
                         Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue | 
                         Where-Object { $_.Name -like "*$query*" } | 

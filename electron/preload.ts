@@ -69,9 +69,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // Plugin API bridge
 contextBridge.exposeInMainWorld('pluginAPI', {
+  // Basic lifecycle
   list: () => ipcRenderer.invoke('plugin:list'),
   install: (source: string) => ipcRenderer.invoke('plugin:install', source),
   uninstall: (id: string) => ipcRenderer.invoke('plugin:uninstall', id),
   toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin:toggle', id, enabled),
   getPath: () => ipcRenderer.invoke('plugin:get-path'),
+  reload: (id: string) => ipcRenderer.invoke('plugin:reload', id),
+
+  // Settings
+  getSettings: (id: string) => ipcRenderer.invoke('plugin:get-settings', id),
+  updateSettings: (id: string, settings: Record<string, unknown>) =>
+    ipcRenderer.invoke('plugin:update-settings', id, settings),
+  getManifest: (id: string) => ipcRenderer.invoke('plugin:get-manifest', id),
+
+  // Main process actions (e.g., player methods)
+  invokeAction: (pluginId: string, action: string, args?: any) => ipcRenderer.invoke('plugin:invoke-action', pluginId, action, args),
+  invokeCommand: (pluginId: string, commandId: string, args: string) => ipcRenderer.invoke('plugin:invoke-command', pluginId, commandId, args),
+  invokeSearch: (pluginId: string, providerId: string, query: string) => ipcRenderer.invoke('plugin:invoke-search', pluginId, providerId, query),
+  executeResultAction: (actionId: string) => ipcRenderer.invoke('plugin:execute-result-action', actionId),
+  signIn: (pluginId: string) => ipcRenderer.invoke('plugin:sign-in', pluginId),
+
+  // Event listeners for plugin events
+  onPluginList: (callback: (plugins: unknown[]) => void) => {
+    ipcRenderer.on('plugin:list', (_event, plugins) => callback(plugins));
+  },
+  onPluginCommand: (callback: (data: { pluginId: string; command: unknown }) => void) => {
+    ipcRenderer.on('plugin:command', (_event, data) => callback(data));
+  },
+  onPluginSearchProvider: (callback: (data: { pluginId: string; provider: unknown }) => void) => {
+    ipcRenderer.on('plugin:search-provider', (_event, data) => callback(data));
+  },
+  onPluginResults: (callback: (data: { pluginId: string; results: unknown[] }) => void) => {
+    ipcRenderer.on('plugin:results', (_event, data) => callback(data));
+  },
+  onPluginNotification: (callback: (data: { pluginId: string; message: string; type: string }) => void) => {
+    ipcRenderer.on('plugin:notification', (_event, data) => callback(data));
+  },
+  onPluginSettingsUpdated: (callback: (data: { pluginId: string; settings: Record<string, unknown> }) => void) => {
+    ipcRenderer.on('plugin:settings-updated', (_event, data) => callback(data));
+  },
+  onPluginNavigate: (callback: (data: { pluginId: string; view: string }) => void) => {
+    ipcRenderer.on('plugin:navigate', (_event, data) => callback(data));
+  },
+  onPluginUnregisterCommands: (callback: (data: { pluginId: string }) => void) => {
+    ipcRenderer.on('plugin:unregister-commands', (_event, data) => callback(data));
+  },
+  onPluginReloadCommands: (callback: (data: { pluginId: string }) => void) => {
+    ipcRenderer.on('plugin:reload-commands', (_event, data) => callback(data));
+  },
+  requestCommands: () => ipcRenderer.invoke('plugin:request-commands'),
 });

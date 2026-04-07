@@ -10,7 +10,7 @@ interface CompactPlayerProps {
 interface TrackInfo {
   title: string;
   artist: string;
-  thumbnail?: string;
+  artwork?: string;
 }
 
 interface PlayerState {
@@ -28,7 +28,7 @@ export function CompactPlayer({ onExpand, onVisibilityChange }: CompactPlayerPro
 
   const fetchState = useCallback(async () => {
     try {
-      const result = await window.pluginAPI.invokeMainAction?.('youtube-music', 'getState');
+      const result = await window.pluginAPI.invokeMainAction?.('media-control', 'getState');
       if (result) {
         setState({
           isPlaying: result.isPlaying,
@@ -53,9 +53,9 @@ export function CompactPlayer({ onExpand, onVisibilityChange }: CompactPlayerPro
     e.stopPropagation();
     try {
       if (state.isPlaying) {
-        await window.pluginAPI.invokeMainAction?.('youtube-music', 'pause');
+        await window.pluginAPI.invokeMainAction?.('media-control', 'pause');
       } else {
-        await window.pluginAPI.invokeMainAction?.('youtube-music', 'resume');
+        await window.pluginAPI.invokeMainAction?.('media-control', 'resume');
       }
       setState(prev => ({ ...prev, isPlaying: !prev.isPlaying }));
     } catch { /* ignore */ }
@@ -64,7 +64,7 @@ export function CompactPlayer({ onExpand, onVisibilityChange }: CompactPlayerPro
   const handleNext = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const result = await window.pluginAPI.invokeMainAction?.('youtube-music', 'next');
+      const result = await window.pluginAPI.invokeMainAction?.('media-control', 'next');
       if (result?.track) {
         setState(prev => ({
           ...prev,
@@ -78,10 +78,10 @@ export function CompactPlayer({ onExpand, onVisibilityChange }: CompactPlayerPro
   if (!state.currentTrack) return null;
 
   return (
-    <div className="compact-plugin-badge" onClick={onExpand} title="YouTube Music öffnen">
+    <div className="compact-plugin-badge" onClick={onExpand} title="Media öffnen">
       <div className="compact-plugin-icon">
-        {state.currentTrack.thumbnail ? (
-          <img src={state.currentTrack.thumbnail} alt="" />
+        {state.currentTrack.artwork ? (
+          <img src={state.currentTrack.artwork} alt="" />
         ) : (
           <Music size={14} />
         )}

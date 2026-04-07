@@ -39,7 +39,7 @@ export async function findEverythingPath(): Promise<string | null> {
         try {
             await fs.access(p);
             return p;
-        } catch { }
+        } catch { /* ignore - path doesn't exist */ }
     }
     return null;
 }
@@ -63,7 +63,7 @@ export async function searchWithEverything(query: string, maxResults: number = 5
             await fs.access(p);
             esPath = p;
             break;
-        } catch { }
+        } catch { /* ignore - not found */ }
     }
 
     if (!esPath) {
