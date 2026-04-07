@@ -9,12 +9,14 @@ import {
 } from 'lucide-react';
 
 import { commandRegistry } from '../core/commands/registry';
+import { CompactPlayer } from '../components/CompactPlayer';
 
 interface SearchViewProps {
   settings: AppSettings;
   onOpenAI: () => void;
   onOpenSettings: () => void;
   onOpenNote: (id?: number) => void;
+  onOpenYouTubeMusic: () => void;
 }
 
 // Focus zones for Tab navigation
@@ -115,7 +117,7 @@ function calculateScore(itemTitle: string, itemType: string, itemIdOrPath: strin
 }
 
 
-export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: SearchViewProps) {
+export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onOpenYouTubeMusic }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [expandWeb, setExpandWeb] = useState(false);
@@ -124,6 +126,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [recentItems, setRecentItems] = useState<SearchResult[]>([]);
+  const [compactPlayerVisible, setCompactPlayerVisible] = useState(false);
 
   // 🧠 Zustand für die Klick-Historie
   const [clickHistory, setClickHistory] = useState<Record<string, number>>({});
@@ -1003,6 +1006,13 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote }: S
           </div>
           <span>Windows Bar</span>
         </div>
+
+        {/* Compact Plugin Players */}
+        {compactPlayerVisible && (
+          <div className="compact-plugins-container">
+            <CompactPlayer onExpand={onOpenYouTubeMusic} onVisibilityChange={setCompactPlayerVisible} />
+          </div>
+        )}
       </div>
     </div>
   );

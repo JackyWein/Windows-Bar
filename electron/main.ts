@@ -25,6 +25,7 @@ process.on('unhandledRejection', (error) => {
 import { execSync, spawn, ChildProcess, exec } from 'child_process';
 import { tryGetIconWithRetry, resolveShortcutIcon } from './utils/icons';
 import { loadExternalCommands } from './utils/external-commands';
+import { loadAllPlugins, registerPluginIPC } from './utils/plugins';
 import { autoUpdater } from 'electron-updater';
 import { searchEverything, isEverythingRunning } from './indexers/everything';
 import { searchWithWindowsIndex } from './indexers/windowsSearch';
@@ -739,8 +740,41 @@ function toggleWindow() {
 app.whenReady().then(async () => {
   createWindow();
 
-  // Initialize plugin system first (creates plugins folder if needed)
-  initializePlugins();
+  // Register plugin IPC handlers
+  registerPluginIPC();
+
+  // Auto-copy bundled plugins on first start
+  try {
+    const pluginsDir = join(app.getPath('userData'), 'plugins');
+    await fs.mkdir(pluginsDir, { recursive: true });
+    const bundledPluginsDir = join(__dirname, '..', 'plugins');
+    const ytmManifestPath = join(bundledPluginsDir, 'youtube-music', 'manifest.json');
+    const ytmDestDir = join(pluginsDir, 'youtube-music');
+    // Check if youtube-music plugin already exists in user plugins dir
+    try {
+      await fs.access(join(ytmDestDir, 'manifest.json'));
+    } catch {
+      // Plugin not installed yet, copy from bundled
+      try {
+        await fs.access(ytmManifestPath);
+        await fs.cp(join(bundledPluginsDir, 'youtube-music'), ytmDestDir, { recursive: true });
+        // Create default settings
+        await fs.writeFile(join(ytmDestDir, 'settings.json'), JSON.stringify({
+          compactMode: false,
+          autoPlay: false,
+          quality: 'high',
+        }, null, 2));
+        console.log('[WindowsBar] Auto-installed YouTube Music plugin');
+      } catch {
+        console.log('[WindowsBar] Bundled YouTube Music plugin not found');
+      }
+    }
+  } catch (err) {
+    console.error('[WindowsBar] Error auto-installing plugins:', err);
+  }
+
+  // Load all plugins
+  await loadAllPlugins();
 
   // Load external commands from user commands folder
   const externalCmds = await loadExternalCommands();
@@ -1310,152 +1344,8 @@ ipcMain.on('write-clipboard', (_event, text: string) => {
 // ========================
 // PLUGIN SYSTEM
 // ========================
-
-const PLUGINS_DIR = join(app.getPath('userData'), 'plugins');
-
-/** Ensure the plugins directory exists */
-async function ensurePluginsDir(): Promise<void> {
-  try {
-    await fs.mkdir(PLUGINS_DIR, { recursive: true });
-    console.log('[WindowsBar] Plugins directory ensured:', PLUGINS_DIR);
-  } catch { /* already exists */ }
-}
-
-/** Read and parse a plugin manifest.json */
-async function readManifest(pluginDir: string): Promise<Record<string, unknown> | null> {
-  try {
-    const raw = await fs.readFile(join(pluginDir, 'manifest.json'), 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-/** Load plugin icon as base64 if available */
-async function loadPluginIcon(pluginDir: string): Promise<string | null> {
-  const iconExtensions = ['png', 'svg', 'ico', 'jpg'];
-  for (const ext of iconExtensions) {
-    const iconPath = join(pluginDir, `icon.${ext}`);
-    try {
-      const iconData = await fs.readFile(iconPath);
-      const base64 = iconData.toString('base64');
-      const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
-      return `data:${mimeType};base64,${base64}`;
-    } catch {
-      // Try next extension
-    }
-  }
-  return null;
-}
-
-/** Initialize plugins on app start - creates folder and loads installed plugins */
-async function initializePlugins(): Promise<void> {
-  await ensurePluginsDir();
-  console.log('[WindowsBar] Plugin system initialized. Plugins directory:', PLUGINS_DIR);
-
-  // List installed plugins for logging
-  try {
-    const entries = await fs.readdir(PLUGINS_DIR, { withFileTypes: true });
-    const pluginDirs = entries.filter(e => e.isDirectory());
-    console.log(`[WindowsBar] Found ${pluginDirs.length} installed plugin(s)`);
-  } catch (e) {
-    console.error('[WindowsBar] Error scanning plugins directory:', e);
-  }
-}
-
-ipcMain.handle('plugin:list', async () => {
-  await ensurePluginsDir();
-  const plugins: Array<Record<string, unknown>> = [];
-
-  try {
-    const entries = await fs.readdir(PLUGINS_DIR, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const pluginDir = join(PLUGINS_DIR, entry.name);
-      const manifest = await readManifest(pluginDir);
-      if (manifest) {
-        // Try to load plugin icon
-        const iconBase64 = await loadPluginIcon(pluginDir);
-
-        plugins.push({
-          id: manifest.id ?? entry.name,
-          name: manifest.name ?? entry.name,
-          version: manifest.version ?? '0.0.0',
-          description: manifest.description ?? '',
-          author: manifest.author ?? '',
-          enabled: true,
-          installed: true,
-          iconBase64,
-        });
-      }
-    }
-  } catch (e) {
-    console.error('plugin:list error:', e);
-  }
-
-  return plugins;
-});
-
-ipcMain.handle('plugin:get-path', () => {
-  return PLUGINS_DIR;
-});
-
-ipcMain.handle('plugin:install', async (_event, sourcePath: string) => {
-  await ensurePluginsDir();
-
-  // Read manifest from source
-  const manifest = await readManifest(sourcePath);
-  if (!manifest) {
-    throw new Error('No manifest.json found in plugin folder');
-  }
-
-  const pluginId = String(manifest.id ?? 'unknown-plugin');
-  const destDir = join(PLUGINS_DIR, pluginId);
-
-  // Check if plugin already exists and remove it first
-  try {
-    await fs.rm(destDir, { recursive: true, force: true });
-  } catch {
-    // Directory didn't exist, that's fine
-  }
-
-  // Copy plugin files
-  await fs.cp(sourcePath, destDir, { recursive: true, force: true });
-
-  console.log(`[WindowsBar] Plugin "${pluginId}" installed to:`, destDir);
-
-  // Load icon for the newly installed plugin
-  const iconBase64 = await loadPluginIcon(destDir);
-
-  return {
-    id: pluginId,
-    name: String(manifest.name ?? pluginId),
-    version: String(manifest.version ?? '0.0.0'),
-    description: String(manifest.description ?? ''),
-    author: String(manifest.author ?? ''),
-    enabled: true,
-    installed: true,
-    iconBase64,
-  };
-});
-
-ipcMain.handle('plugin:uninstall', async (_event, pluginId: string) => {
-  const pluginDir = join(PLUGINS_DIR, pluginId);
-  try {
-    await fs.rm(pluginDir, { recursive: true, force: true });
-    console.log(`[WindowsBar] Plugin "${pluginId}" uninstalled`);
-  } catch (e) {
-    console.error('plugin:uninstall error:', e);
-    throw e;
-  }
-});
-
-ipcMain.handle('plugin:toggle', async (_event, pluginId: string, enabled: boolean) => {
-  // Plugin enabled state is managed on the renderer side via settings.
-  // The main process just acknowledges the toggle.
-  console.log(`[WindowsBar] Plugin ${pluginId} ${enabled ? 'enabled' : 'disabled'}`);
-  return { id: pluginId, enabled };
-});
+// Plugin system is now handled by electron/utils/plugins.ts
+// IPC handlers are registered via registerPluginIPC()
 
 // ========================
 // AI CHAT IPC HANDLERS

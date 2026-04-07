@@ -1,0 +1,49 @@
+{
+  "id": "youtube-music",
+  "name": "YouTube Music",
+  "version": "1.0.0",
+  "description": "YouTube Music Player mit voller Steuerung - Suche, Playback, Lautstärke, Queue",
+  "author": "Windows Bar",
+  "icon": "icon.png",
+  "minAppVersion": "1.0.9",
+  "provides": {
+    "commands": true,
+    "searchProvider": true,
+    "view": true,
+    "settings": false,
+    "hooks": true
+  },
+  "settingsSchema": [
+    {
+      "key": "compactMode",
+      "type": "boolean",
+      "label": "Kompakter Modus",
+      "description": "Zeigt einen kompakten Player unter der Suchleiste",
+      "default": false
+    },
+    {
+      "key": "autoPlay",
+      "type": "boolean",
+      "label": "Auto-Play",
+      "description": "Automatisch abspielen nach der Suche",
+      "default": false
+    },
+    {
+      "key": "quality",
+      "type": "select",
+      "label": "Audio-Qualität",
+      "description": "Bevorzugte Streaming-Qualität",
+      "options": [
+        { "value": "low", "label": "Niedrig (64kbps)" },
+        { "value": "medium", "label": "Mittel (128kbps)" },
+        { "value": "high", "label": "Hoch (256kbps)" }
+      ],
+      "default": "high"
+    }
+  ],
+  "defaultSettings": {
+    "compactMode": false,
+    "autoPlay": false,
+    "quality": "high"
+  }
+}

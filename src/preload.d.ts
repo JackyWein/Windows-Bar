@@ -73,6 +73,25 @@ interface PluginAPI {
   install: (source: string) => Promise<unknown>;
   uninstall: (id: string) => Promise<void>;
   toggle: (id: string, enabled: boolean) => Promise<void>;
+  getPath: () => Promise<string>;
+  reload: (id: string) => Promise<{ success: boolean }>;
+  getSettings: (id: string) => Promise<Record<string, unknown>>;
+  updateSettings: (id: string, settings: Record<string, unknown>) => Promise<{ success: boolean }>;
+  getManifest: (id: string) => Promise<unknown>;
+  invokeMainAction: (pluginId: string, action: string, args?: any) => Promise<any>;
+
+   // Plugin event listeners
+   onPluginList: (callback: (plugins: any[]) => void) => void;
+   onPluginCommand: (callback: (data: { pluginId: string; command: any }) => void) => void;
+   onPluginSearchProvider: (callback: (data: { pluginId: string; provider: any }) => void) => void;
+   onPluginResults: (callback: (data: { pluginId: string; results: any[] }) => void) => void;
+   onPluginNotification: (callback: (data: { pluginId: string; message: string; type: string }) => void) => void;
+   onPluginSettingsUpdated: (callback: (data: { pluginId: string; settings: Record<string, unknown> }) => void) => void;
+   onPluginNavigate: (callback: (data: { pluginId: string; view: string }) => void) => void;
+   onPluginUnregisterCommands: (callback: (data: { pluginId: string }) => void) => void;
+   onPluginReloadCommands: (callback: (data: { pluginId: string }) => void) => void;
+   requestCommands: () => Promise<{ success: boolean }>;
+   signIn: (pluginId: string) => Promise<{ success: boolean; message?: string }>;
 }
 
 interface Window {

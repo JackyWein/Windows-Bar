@@ -5,7 +5,7 @@ import {
   Monitor, Globe, SlidersHorizontal,
   Search, Terminal, Download, Puzzle,
   FolderOpen, Trash2, RefreshCw, History,
-  Power,
+  Power, Settings as SettingsIcon,
 } from 'lucide-react';
 import type { AppSettings } from '../types';
 import { builtinThemes } from '../core/settings/themes';
@@ -51,6 +51,9 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   const [appVersion, setAppVersion] = useState('1.0.0');
   const [plugins, setPlugins] = useState<Array<{ id: string; name: string; version: string; description: string; author: string; enabled: boolean }>>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
+  const [selectedPluginForSettings, setSelectedPluginForSettings] = useState<string | null>(null);
+  const [pluginSettings, setPluginSettings] = useState<Record<string, unknown>>({});
+  const [pluginSettingsSchema, setPluginSettingsSchema] = useState<any[]>([]);
   const [confirmDialog, confirm] = useConfirm();
 
   // Update check state
@@ -812,8 +815,8 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
               <h3>Keine Plugins installiert</h3>
               <p>Erweitere Windows Bar mit mächtigen Plugins</p>
               <div className="plugin-empty-hint">
-                <p>Erstelle einen Ordner mit einer <code>manifest.json</code> Datei</p>
-                <p>und installiere ihn über den "Installieren" Button unten</p>
+                <p>Erstelle einen Ordner mit einer <code>manifest.json</code> und <code>main.js</code></p>
+                <p>Plugins liegen in: <code>%APPDATA%/windowsbar/plugins/</code></p>
               </div>
             </div>
           )}
@@ -863,6 +866,40 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
                     </label>
                   </div>
                   <button
+                    className="plugin-settings-btn"
+                    onClick={async () => {
+                      try {
+                        const manifest = await window.pluginAPI.getManifest(plugin.id) as any;
+                        const schema = manifest?.settingsSchema || [];
+                        const currentSettings = await window.pluginAPI.getSettings(plugin.id);
+                        setPluginSettingsSchema(schema);
+                        setPluginSettings(currentSettings || {});
+                        setSelectedPluginForSettings(plugin.id);
+                      } catch { /* ignore */ }
+                    }}
+                    title="Plugin-Einstellungen"
+                  >
+                    <SettingsIcon size={14} />
+                  </button>
+                  <button
+                    className="plugin-reload-btn"
+                    onClick={async () => {
+                      await window.pluginAPI.reload(plugin.id);
+                      const list = await window.pluginAPI.list();
+                      setPlugins((list as Record<string, unknown>[]).map((p) => ({
+                        id: String(p.id),
+                        name: String(p.name),
+                        version: String(p.version),
+                        description: String(p.description ?? ''),
+                        author: String(p.author ?? ''),
+                        enabled: Boolean(p.enabled),
+                      })));
+                    }}
+                    title="Plugin neu laden"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                  <button
                     className="plugin-uninstall-btn"
                     onClick={() => handleUninstall(plugin.id)}
                     title="Plugin deinstallieren"
@@ -885,6 +922,89 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             </p>
           </div>
         </div>
+
+        {/* Plugin Settings Modal */}
+        {selectedPluginForSettings && (
+          <div className="plugin-settings-modal-backdrop" onClick={() => setSelectedPluginForSettings(null)}>
+            <div className="plugin-settings-modal" onClick={e => e.stopPropagation()}>
+              <div className="plugin-settings-header">
+                <h3>Einstellungen: {plugins.find(p => p.id === selectedPluginForSettings)?.name}</h3>
+                <button className="plugin-settings-close" onClick={() => setSelectedPluginForSettings(null)}>✕</button>
+              </div>
+              <div className="plugin-settings-body">
+                {pluginSettingsSchema.length === 0 ? (
+                  <p className="plugin-no-settings">Dieses Plugin hat keine konfigurierbaren Einstellungen.</p>
+                ) : (
+                  <div className="plugin-settings-fields">
+                    {pluginSettingsSchema.map((field: any) => {
+                      const key = field.key;
+                      const value = pluginSettings[key] !== undefined ? pluginSettings[key] : field.default;
+
+                      const updateField = async (val: unknown) => {
+                        const updated = { ...pluginSettings, [key]: val };
+                        setPluginSettings(updated);
+                        await window.pluginAPI.updateSettings(selectedPluginForSettings, updated);
+                      };
+
+                      return (
+                        <div key={key} className="plugin-setting-field">
+                          <label className="plugin-field-label">
+                            <span className="plugin-field-label-text">{field.label}</span>
+                            {field.description && <span className="plugin-field-desc">{field.description}</span>}
+                          </label>
+                          {field.type === 'boolean' && (
+                            <label className="toggle-switch">
+                              <input type="checkbox" checked={!!value} onChange={e => updateField(e.target.checked)} />
+                              <span className="toggle-slider" />
+                            </label>
+                          )}
+                          {field.type === 'select' && (
+                            <select
+                              className="plugin-field-select"
+                              value={String(value)}
+                              onChange={e => updateField(e.target.value)}
+                            >
+                              {field.options?.map((opt: any) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          )}
+                          {field.type === 'text' && (
+                            <input
+                              className="plugin-field-input"
+                              type="text"
+                              value={String(value || '')}
+                              placeholder={field.placeholder}
+                              onChange={e => updateField(e.target.value)}
+                            />
+                          )}
+                          {field.type === 'number' && (
+                            <input
+                              className="plugin-field-input"
+                              type="number"
+                              value={Number(value || 0)}
+                              min={field.min}
+                              max={field.max}
+                              onChange={e => updateField(Number(e.target.value))}
+                            />
+                          )}
+                          {field.type === 'color' && (
+                            <input
+                              className="plugin-field-color"
+                              type="color"
+                              value={String(value || '#7c5cfc')}
+                              onChange={e => updateField(e.target.value)}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <style>{`
           .plugin-section-header {
@@ -1070,6 +1190,36 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             color: var(--text-muted);
           }
           
+          .plugin-reload-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 6px;
+            transition: all 0.2s;
+          }
+          
+          .plugin-reload-btn:hover {
+            background: var(--item-hover);
+            color: var(--accent);
+          }
+          
+          .plugin-settings-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 6px;
+            transition: all 0.2s;
+          }
+          
+          .plugin-settings-btn:hover {
+            background: var(--item-hover);
+            color: var(--accent);
+          }
+          
           .plugin-uninstall-btn {
             background: transparent;
             border: none;
@@ -1119,6 +1269,129 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             margin: 8px 0 0 0;
             font-size: 12px;
             color: var(--text-muted);
+          }
+
+          /* Plugin Settings Modal */
+          .plugin-settings-modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+          }
+
+          .plugin-settings-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 420px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+          }
+
+          .plugin-settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+          }
+
+          .plugin-settings-header h3 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+          }
+
+          .plugin-settings-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 18px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+          }
+
+          .plugin-settings-close:hover {
+            background: var(--item-hover);
+            color: var(--text);
+          }
+
+          .plugin-settings-body {
+            padding: 20px;
+          }
+
+          .plugin-no-settings {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 24px 0;
+          }
+
+          .plugin-settings-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+
+          .plugin-setting-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }
+
+          .plugin-field-label {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+          }
+
+          .plugin-field-label-text {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+          }
+
+          .plugin-field-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+          }
+
+          .plugin-field-select,
+          .plugin-field-input {
+            width: 100%;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.2s;
+          }
+
+          .plugin-field-select:focus,
+          .plugin-field-input:focus {
+            border-color: var(--accent);
+          }
+
+          .plugin-field-color {
+            width: 48px;
+            height: 32px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            background: transparent;
           }
         `}</style>
       </div>

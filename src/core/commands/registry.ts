@@ -82,6 +82,19 @@ class CommandRegistry {
   getExternal(): readonly Command[] {
     return this.getAll().filter(cmd => cmd.id.startsWith('ext:'));
   }
+
+  // Unregister all commands matching a prefix (e.g., 'plugin:youtube-music:')
+  unregisterByPrefix(prefix: string): void {
+    const toRemove: string[] = [];
+    for (const [id] of this.commands) {
+      if (id.startsWith(prefix)) {
+        toRemove.push(id);
+      }
+    }
+    for (const id of toRemove) {
+      this.commands.delete(id);
+    }
+  }
 }
 
 export const commandRegistry = new CommandRegistry();

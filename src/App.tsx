@@ -6,8 +6,10 @@ import { SearchView } from "./views/SearchView";
 import { SettingsView } from "./views/SettingsView";
 import { AiView } from "./views/AiView";
 import { NotesView } from "./views/NotesView";
+import { YouTubeMusicView } from "./views/YouTubeMusicView";
 import { registerBuiltinCommands } from "./core/commands/builtin";
 import { initExternalCommands } from "./core/commands/external-loader";
+import { initPluginLoader } from "./core/plugins/loader";
 import { builtinThemes, getThemeById } from "./core/settings/themes";
 import type { Theme } from "./types";
 import type { AISettings } from "./core/ai";
@@ -192,6 +194,14 @@ function App() {
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
+  // Initialize plugin loader (registers plugin commands into commandRegistry)
+  useEffect(() => {
+    initPluginLoader(
+      (view) => setViewMode(view as ViewMode),
+      () => {} // Plugin results are handled via commands, not direct injection
+    );
+  }, []);
+
   // Persist settings
   useEffect(() => {
     localStorage.setItem("windowsbar_settings", JSON.stringify(settings));
@@ -271,6 +281,15 @@ function App() {
     }
   };
 
+  const openYouTubeMusic = () => {
+    setViewMode("youtube-music");
+    try {
+      window.electronAPI.resizeWindow(850, 700);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const clearAllData = async () => {
     const ok = await confirm({
       title: "Delete All Data",
@@ -318,12 +337,18 @@ function App() {
           initialNoteId={activeNoteId}
         />
       )}
+      {viewMode === "youtube-music" && (
+        <YouTubeMusicView
+          onBack={backToSearch}
+        />
+      )}
       {viewMode === "search" && (
         <SearchView
           settings={settings}
           onOpenAI={openAI}
           onOpenSettings={openSettings}
           onOpenNote={openNote}
+          onOpenYouTubeMusic={openYouTubeMusic}
         />
       )}
       {confirmDialog}
