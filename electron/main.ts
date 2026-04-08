@@ -610,9 +610,13 @@ function searchIndex(query: string): IndexItem[] {
 // ========================
 
 // Configure auto-updater
-autoUpdater.autoDownload = true;        // Automatically download updates
+autoUpdater.autoDownload = false;        // Manually trigger download to prevent blocking
 autoUpdater.autoInstallOnAppQuit = true; // Install on app quit (no user interaction)
 autoUpdater.allowPrerelease = false;     // Only stable releases
+
+let updateReady = false;
+let installOnReady = false;
+let currentDownloadProgress: number | null = null;
 
 // Check for updates silently (no user notification)
 async function checkForUpdates() {
@@ -623,15 +627,17 @@ async function checkForUpdates() {
 
   try {
     console.log('[WindowsBar] Checking for updates...');
-    await autoUpdater.checkForUpdates();
+    const result = await autoUpdater.checkForUpdates();
+    if (result && result.updateInfo && result.updateInfo.version !== app.getVersion()) {
+      if (!updateReady && currentDownloadProgress === null) {
+        console.log(`[WindowsBar] Background download started for ${result.updateInfo.version}`);
+        autoUpdater.downloadUpdate().catch(e => console.error('[WindowsBar] Download error:', e));
+      }
+    }
   } catch (error) {
     console.error('[WindowsBar] Update check failed:', error);
   }
 }
-
-let updateReady = false;
-let installOnReady = false;
-let currentDownloadProgress: number | null = null;
 
 // Auto-updater event handlers (silent - no UI notifications)
 autoUpdater.on('checking-for-update', () => {
@@ -1589,6 +1595,12 @@ ipcMain.handle('check-for-updates', async () => {
 
       if (result.updateInfo.version !== currentVersion) {
         console.log(`[WindowsBar] Update available: ${latestVersion}`);
+        
+        if (!updateReady && currentDownloadProgress === null) {
+          console.log(`[WindowsBar] Background download started manually via UI check for ${latestVersion}`);
+          autoUpdater.downloadUpdate().catch(e => console.error('[WindowsBar] Manual UI download error:', e));
+        }
+
         return {
           available: true,
           currentVersion,
@@ -1606,10 +1618,17 @@ ipcMain.handle('check-for-updates', async () => {
     return { available: false, currentVersion: app.getVersion() };
   } catch (error) {
     console.error('[WindowsBar] Update check failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Friendly error for uninstalled/unpacked versions (like the friend's code)
+    if (errorMessage.includes('ENOENT') || errorMessage.includes('app-update.yml')) {
+      return { available: false, currentVersion: app.getVersion(), error: 'Updates sind nur in der installierten Version verfügbar.' };
+    }
+
     return {
       available: false,
       currentVersion: app.getVersion(),
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: errorMessage
     };
   }
 });

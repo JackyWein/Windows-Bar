@@ -1,7 +1,13 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
-## [1.0.12] - 2026-04-08
+## [1.0.14] - 2026-04-08
+
+**🐛 Hotfix: UI-Freeze beim Update-Check**
+
+* Es wurde ein Fehler behoben, durch den die App beim Suchen nach Updates scheinbar im Ladezustand ("Prüfe...") stecken geblieben ist. Der Auto-Updater wartet nun nicht mehr im Hintergrund ab, bis der gesamte Download beendet ist, bevor er das Frontend informiert. Stattdessen wird die Update-Suche sofort abgeschlossen und der Download läuft anschließend nahtlos im Hintergrund weiter!
+
+## [1.0.13] - 2026-04-08
 
 **🚀 Auto-Update Verbesserungen**
 
