@@ -1,7 +1,7 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
-## [1.0.11] - 2026-04-08
+## [1.0.12] - 2026-04-08
 
 **🚀 Auto-Update Verbesserungen**
 
@@ -11,7 +11,7 @@ Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokument
 * **Neustart-Routine:** Ein Klick auf "Installieren" in den Einstellungen leitet nun verlässlich das Schließen der App und den automatischen Neustart nach dem NSIS-Entpackvorgang ein.
 * **Daten-Sicherheit:** Durch saubere Isolierung des NSIS Updaters bleiben alle lokalen Einstellungen, Session-Historien, Notizen und Plugin-Daten auch nach Updates vollständig erhalten.
 
-## [1.1.1] - 2026-04-07
+## [1.0.11] - 2026-04-07
 
 **🧹 Bereinigung & Wartung**
 
@@ -25,7 +25,7 @@ Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokument
 * `plugins/` Ordner wird jetzt korrekt in die EXE bundled
 * Optimierte Build-Konfiguration
 
-## [1.1.0] - 2026-04-07
+## [1.0.10] - 2026-04-07
 
 **✨ Neue Features & Highlights**
 
