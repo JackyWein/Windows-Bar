@@ -1,0 +1,17 @@
+{
+  "id": "media-control",
+  "name": "Media Control",
+  "version": "1.0.0",
+  "description": "Steuert System-Medienwiedergabe - YouTube, Spotify, Netflix, etc.",
+  "author": "Windows Bar",
+  "icon": "icon.png",
+  "minAppVersion": "1.0.9",
+  "provides": {
+    "commands": true,
+    "searchProvider": false,
+    "view": true,
+    "settings": false,
+    "hooks": true
+  },
+  "defaultSettings": {}
+}

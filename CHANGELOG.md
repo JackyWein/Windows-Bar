@@ -1,6 +1,16 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.0.11] - 2026-04-08
+
+**🚀 Auto-Update Verbesserungen**
+
+* **Unsichtbare Updates:** Updates laden ab sofort absolut zuverlässig und performant im Hintergrund herunter, selbst wenn die Suchleiste nach Ausführen des Befehls geschlossen wird (Background Throttling für Chromium deaktiviert).
+* **Bessere Status-Erkennung:** Wenn du die Einstellungen wieder öffnest, wird nun korrekt der aktive Download-Fortschritt in % angezeigt, anstatt fälschlicherweise auf "Wird vorbereitet..." hängen zu bleiben.
+* **Update Badge:** Ein neuer kleiner roter (oder blauer/accentfarbener) Indikator-Punkt am Einstellungs-Zahnrad in der Suchleiste zeigt sofort an, wenn ein Update erfolgreich im Hintergrund heruntergeladen wurde und zur Installation bereitsteht.
+* **Neustart-Routine:** Ein Klick auf "Installieren" in den Einstellungen leitet nun verlässlich das Schließen der App und den automatischen Neustart nach dem NSIS-Entpackvorgang ein.
+* **Daten-Sicherheit:** Durch saubere Isolierung des NSIS Updaters bleiben alle lokalen Einstellungen, Session-Historien, Notizen und Plugin-Daten auch nach Updates vollständig erhalten.
+
 ## [1.1.1] - 2026-04-07
 
 **🧹 Bereinigung & Wartung**
