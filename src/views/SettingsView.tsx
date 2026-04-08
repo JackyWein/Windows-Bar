@@ -67,6 +67,7 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     latestVersion?: string;
     error?: string;
     downloaded?: boolean;
+    downloadProgress?: number | null;
   } | null>(null);
 
   useEffect(() => {
@@ -1549,6 +1550,9 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
         setUpdateResult(result);
         if (result?.downloaded) {
           setUpdateDownloaded(true);
+        }
+        if (result?.downloadProgress != null) {
+          setUpdateProgress(result.downloadProgress);
         }
       } catch {
         setUpdateResult({ available: false, error: 'Fehler beim Prüfen auf Updates' });

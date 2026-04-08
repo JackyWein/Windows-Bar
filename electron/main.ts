@@ -631,6 +631,7 @@ async function checkForUpdates() {
 
 let updateReady = false;
 let installOnReady = false;
+let currentDownloadProgress: number | null = null;
 
 // Auto-updater event handlers (silent - no UI notifications)
 autoUpdater.on('checking-for-update', () => {
@@ -647,6 +648,7 @@ autoUpdater.on('update-not-available', () => {
 
 autoUpdater.on('download-progress', (progressObj) => {
   const percent = Math.round(progressObj.percent);
+  currentDownloadProgress = progressObj.percent;
   console.log(`[WindowsBar] Downloading update: ${percent}% (${progressObj.transferred}/${progressObj.total} bytes)`);
   if (mainWindow) {
     mainWindow.webContents.send('update-progress', progressObj.percent);
@@ -657,6 +659,7 @@ autoUpdater.on('update-downloaded', (info) => {
   console.log('[WindowsBar] Update downloaded:', info.version);
   console.log('[WindowsBar] Update will be installed on next app restart');
   updateReady = true;
+  currentDownloadProgress = 100;
   if (installOnReady) {
     autoUpdater.quitAndInstall();
   }
@@ -698,7 +701,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webviewTag: true  // Enable <webview> for inline AI & web
+      webviewTag: true,  // Enable <webview> for inline AI & web
+      backgroundThrottling: false // Prevent suspension when hidden
     }
   });
 
@@ -1590,6 +1594,8 @@ ipcMain.handle('check-for-updates', async () => {
           currentVersion,
           latestVersion,
           releaseNotes: result.updateInfo.releaseNotes,
+          downloaded: updateReady,
+          downloadProgress: currentDownloadProgress,
         };
       } else {
         console.log('[WindowsBar] No update available');
@@ -1612,7 +1618,7 @@ ipcMain.handle('check-for-updates', async () => {
 ipcMain.on('install-update', () => {
   console.log('[WindowsBar] Installiere Update (oder warte auf Download)...');
   if (updateReady) {
-    autoUpdater.quitAndInstall();
+    autoUpdater.quitAndInstall(false, true);
   } else {
     installOnReady = true;
   }

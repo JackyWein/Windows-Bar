@@ -131,6 +131,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
 
   // 🧠 Zustand für die Klick-Historie
   const [clickHistory, setClickHistory] = useState<Record<string, number>>({});
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
 
   // Focus zone state for Tab navigation
   const [focusedZone, setFocusedZone] = useState(FOCUS_ZONE_INPUT);
@@ -154,7 +155,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
     }
   }, [settings.commands.enabled]);
 
-  // Load recents & Click History on mount
+  // Load recents & Click History on mount & check for updates
   useEffect(() => {
     const savedRecents = localStorage.getItem('recent_searches');
     if (savedRecents) {
@@ -165,6 +166,20 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
     const savedHistory = localStorage.getItem('search_click_history');
     if (savedHistory) {
       try { setClickHistory(JSON.parse(savedHistory)); } catch { /* ignore */ }
+    }
+
+    // Check if update is already downloaded
+    window.electronAPI?.checkForUpdates?.().then(result => {
+      if (result?.downloaded) {
+        setUpdateDownloaded(true);
+      }
+    }).catch(() => {});
+
+    // Listen for update downloaded event
+    if (window.electronAPI?.onUpdateDownloaded) {
+      window.electronAPI.onUpdateDownloaded(() => {
+        setUpdateDownloaded(true);
+      });
     }
   }, []);
 
@@ -887,6 +902,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
             title="Einstellungen"
           >
             <Settings size={16} />
+            {updateDownloaded && <span className="update-badge-indicator" title="Update bereit zur Installation"></span>}
           </button>
           <div className="shortcut-hint"><kbd>ESC</kbd></div>
         </div>

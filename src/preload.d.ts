@@ -54,7 +54,7 @@ interface ElectronAPI {
   updateSystemSettings: (settings: { autoStart?: boolean; alwaysOnTop?: boolean; overlayFullscreen?: boolean }) => void;
 
   // Updates
-  checkForUpdates: () => Promise<{ available: boolean; currentVersion?: string; latestVersion?: string; error?: string; downloaded?: boolean }>;
+  checkForUpdates: () => Promise<{ available: boolean; currentVersion?: string; latestVersion?: string; error?: string; downloaded?: boolean; downloadProgress?: number | null }>;
   installUpdate: () => void;
   getAppVersion: () => Promise<string>;
   onUpdateProgress: (callback: (percent: number) => void) => void;
