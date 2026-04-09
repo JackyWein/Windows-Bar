@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.send('install-update'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdateProgress: (callback: (percent: number) => void) => ipcRenderer.on('update-progress', (_event, percent) => callback(percent)),
+  onUpdateDownloaded: (callback: () => void) => ipcRenderer.on('update-downloaded', () => callback()),
+  onUpdateReady: (callback: () => void) => ipcRenderer.on('update-ready', () => callback()),
 });
 
 // Plugin API bridge

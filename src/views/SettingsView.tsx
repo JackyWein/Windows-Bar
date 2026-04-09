@@ -1614,9 +1614,9 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
                   </span>
                   
                   {updateDownloaded || updateResult.downloaded ? (
-                    <button className="update-install-btn" onClick={handleInstallUpdate} disabled={installRequested}>
+                    <button className="update-install-btn" onClick={handleInstallUpdate}>
                       <Download size={14} />
-                      {installRequested ? 'Wird neugestartet...' : 'Jetzt neustarten & installieren'}
+                      Jetzt neustarten & installieren
                     </button>
                   ) : (
                     <>

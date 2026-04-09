@@ -1,6 +1,14 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.0.15] - 2026-04-09
+
+**🚀 Auto-Update Fixes & Auto-Restart**
+
+* **Auto-Restart nach Update:** Ein Klick auf "Jetzt installieren" schließt die App, entpackt das Update lautlos im Hintergrund und startet die App danach vollautomatisch wieder neu.
+* **Download & Install Logik:** Ein Fehler wurde behoben, bei dem der Installations-Button eingefroren ist, wenn er während eines laufenden Downloads geklickt wurde. Die App merkt sich nun die Anweisung und startet die Installation sofort, wenn der Download 100% erreicht.
+* **Robusterer Download:** Der Download nutzt jetzt direkt das native Node.js-Modul (statt Chromium), wodurch Abbrüche bei Hintergrund-Aktivitäten verhindert werden.
+
 ## [1.0.14] - 2026-04-08
 
 **🐛 Hotfix: UI-Freeze beim Update-Check**

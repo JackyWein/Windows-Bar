@@ -610,60 +610,110 @@ function searchIndex(query: string): IndexItem[] {
 // ========================
 
 // Configure auto-updater
-autoUpdater.autoDownload = false;        // Manually trigger download to prevent blocking
+autoUpdater.autoDownload = true;        // Automatically download updates when found
 autoUpdater.autoInstallOnAppQuit = true; // Install on app quit (no user interaction)
 autoUpdater.allowPrerelease = false;     // Only stable releases
 
 let updateReady = false;
 let installOnReady = false;
 let currentDownloadProgress: number | null = null;
+let isDownloading = false;
+let updateExePath: string | null = null;
 
-// Check for updates silently (no user notification)
+// Check for updates silently on startup using GitHub API (not electron-updater)
 async function checkForUpdates() {
   if (isDev) {
     console.log('[WindowsBar] Skipping update check in dev mode');
     return;
   }
+  
+  // Don't re-download if already downloaded or in progress
+  // But if we have the file, we can still show it
+  if (updateReady || isDownloading) {
+    console.log('[WindowsBar] Skipping download - already done or in progress');
+    return;
+  }
+  
+  // Check if we already have an installer in temp from previous run
+  const tempDir = app.getPath('temp');
+  try {
+    const files = await fs.promises.readdir(tempDir);
+    const existingInstaller = files.find(f => f.includes('WindowsBar') && f.endsWith('.exe'));
+    if (existingInstaller) {
+      console.log('[WindowsBar] Found existing installer in temp');
+      updateExePath = join(tempDir, existingInstaller);
+      updateReady = true;
+      // Notify the UI
+      if (mainWindow) {
+        mainWindow.webContents.send('update-downloaded');
+        mainWindow.webContents.send('update-ready');
+      }
+      return;
+    }
+  } catch (e) {
+    console.log('[WindowsBar] Could not check temp:', e);
+  }
 
   try {
-    console.log('[WindowsBar] Checking for updates...');
-    const result = await autoUpdater.checkForUpdates();
-    if (result && result.updateInfo && result.updateInfo.version !== app.getVersion()) {
-      if (!updateReady && currentDownloadProgress === null) {
-        console.log(`[WindowsBar] Background download started for ${result.updateInfo.version}`);
-        autoUpdater.downloadUpdate().catch(e => console.error('[WindowsBar] Download error:', e));
-      }
+    const currentVersion = app.getVersion();
+    console.log('[WindowsBar] Silent update check. Current:', currentVersion);
+    
+    const release: any = await fetchJSON('https://api.github.com/repos/JackyWein/Windows-Bar/releases/latest');
+    const latestVersion = release.tag_name?.replace('v', '') || release.name;
+    
+    // Compare versions
+    const curr = currentVersion.split('.').map(Number);
+    const latest = latestVersion.split('.').map(Number);
+    const needsUpdate = latest[0] > curr[0] || (latest[0] === curr[0] && latest[1] > curr[1]) || (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
+    
+    if (!needsUpdate) {
+      console.log('[WindowsBar] No update needed');
+      return;
     }
-  } catch (error) {
-    console.error('[WindowsBar] Update check failed:', error);
+    
+    const asset = release.assets?.find((a: any) => a.name?.endsWith('.exe') && a.name.includes('Setup'));
+    if (asset) {
+      console.log('[WindowsBar] Background download started');
+      isDownloading = true;
+      downloadAndInstall(asset.browser_download_url, latestVersion).catch(e => {
+        console.error('[WindowsBar] Background DL error:', e);
+        isDownloading = false;
+      });
+    }
+  } catch (e) {
+    console.error('[WindowsBar] Silent check error:', e);
   }
 }
-
-// Auto-updater event handlers (silent - no UI notifications)
+   
+// Auto-updater event handlers
 autoUpdater.on('checking-for-update', () => {
-  console.log('[WindowsBar] Checking for update...');
+  console.log('[WindowsBar] AU: Checking...');
 });
 
 autoUpdater.on('update-available', (info) => {
-  console.log('[WindowsBar] Update available:', info.version);
+  console.log('[WindowsBar] AU: Update available:', info.version);
+  // Auto-start download like electron-updater docs say
+  if (!updateReady && currentDownloadProgress === null) {
+    console.log('[WindowsBar] AU: Auto-starting download...');
+    autoUpdater.downloadUpdate().catch(e => console.error('[WindowsBar] AU download error:', e));
+  }
 });
 
 autoUpdater.on('update-not-available', () => {
-  console.log('[WindowsBar] No update available. Current version:', app.getVersion());
+  console.log('[WindowsBar] AU: No update');
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
   const percent = Math.round(progressObj.percent);
   currentDownloadProgress = progressObj.percent;
-  console.log(`[WindowsBar] Downloading update: ${percent}% (${progressObj.transferred}/${progressObj.total} bytes)`);
+  console.log(`[WindowsBar] AU: ${percent}% (${progressObj.transferred}/${progressObj.total})`);
   if (mainWindow) {
     mainWindow.webContents.send('update-progress', progressObj.percent);
   }
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  console.log('[WindowsBar] Update downloaded:', info.version);
-  console.log('[WindowsBar] Update will be installed on next app restart');
+  console.log('[WindowsBar] AU: DOWNLOADED:', info.version);
   updateReady = true;
   currentDownloadProgress = 100;
   if (installOnReady) {
@@ -671,11 +721,12 @@ autoUpdater.on('update-downloaded', (info) => {
   }
   if (mainWindow) {
     mainWindow.webContents.send('update-downloaded');
+    mainWindow.webContents.send('update-ready');
   }
 });
 
 autoUpdater.on('error', (error) => {
-  console.error('[WindowsBar] Auto-updater error:', error);
+  console.error('[WindowsBar] UPDATER ERROR:', error.message);
 });
 
 // ========================
@@ -700,7 +751,7 @@ function createWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
-    show: false,
+    show: true,  // Show window immediately on startup
     hasShadow: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
@@ -731,10 +782,6 @@ function createWindow() {
     // Don't hide if devtools are focused
     if (mainWindow?.webContents.isDevToolsOpened()) return;
     mainWindow?.hide();
-  });
-
-  mainWindow.on('ready-to-show', () => {
-    // Hidden initially. Shown via Alt+Space toggle.
   });
 }
 
@@ -1575,71 +1622,226 @@ ipcMain.handle('get-system-settings', () => {
 });
 
 // ========================
-// UPDATE CHECK IPC
+// UPDATE CHECK IPC - Manual Download with electron's net
 // ========================
 
-// Manual update check with dialog result
+// Helper: fetch JSON
+async function fetchJSON(url: string) {
+  return new Promise((resolve, reject) => {
+    const request = net.request(url);
+    request.setHeader('User-Agent', 'WindowsBar-Updater/1.0');
+    request.setHeader('Accept', 'application/vnd.github+json');
+    let data = '';
+    request.on('response', (response) => {
+      response.on('data', (chunk) => { data += chunk; });
+      response.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { 
+          console.log('[WindowsBar] Raw response:', data.substring(0, 200));
+          reject(new Error('Invalid JSON')); 
+        }
+      });
+    });
+    request.on('error', (e) => {
+      console.log('[WindowsBar] Network error:', e.message);
+      reject(e);
+    });
+    request.end();
+  });
+}
+
+// Manual download helper - downloads file to temp folder
+async function downloadAndInstall(url: string, version: string): Promise<void> {
+  const path = join(app.getPath('temp'), `WindowsBar-${version}-Setup-NEU.exe`);
+  const fs2 = require('fs');
+  
+  console.log(`[WindowsBar] Downloading to: ${path}`);
+  console.log(`[WindowsBar] URL: ${url}`);
+  
+  return new Promise((resolve, reject) => {
+    // Determine module to use based on protocol to completely bypass Chromium throttling
+    const client = url.startsWith('https') ? require('https') : require('http');
+    
+    const download = (downloadUrl: string) => {
+      client.get(downloadUrl, (response: any) => {
+        // Handle redirects
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          console.log(`[WindowsBar] Redirecting to: ${response.headers.location}`);
+          return download(response.headers.location);
+        }
+
+        console.log(`[WindowsBar] Response status: ${response.statusCode}`);
+        const total = parseInt(response.headers['content-length']?.toString() || '0');
+        console.log(`[WindowsBar] Total size: ${total} bytes`);
+        
+        const writer = fs2.createWriteStream(path);
+        let received = 0;
+        
+        response.on('data', (chunk: any) => {
+          received += chunk.length;
+          currentDownloadProgress = total > 0 ? (received / total) * 100 : 0;
+          if (mainWindow) mainWindow.webContents.send('update-progress', currentDownloadProgress);
+        });
+        
+        response.pipe(writer);
+        
+        writer.on('finish', () => {
+          console.log('[WindowsBar] Download complete!');
+          updateExePath = path;
+          updateReady = true;
+          isDownloading = false;
+          currentDownloadProgress = 100;
+          if (mainWindow) {
+            mainWindow.webContents.send('update-downloaded');
+            mainWindow.webContents.send('update-ready');
+          }
+          if (installOnReady) {
+            console.log('[WindowsBar] installOnReady flag is true, launching installer now...');
+            try {
+              const { spawn } = require('child_process');
+              const subprocess = spawn(updateExePath, ['/S', '/NCRC', '--force-run'], { detached: true, stdio: 'ignore' });
+              subprocess.unref();
+              app.quit();
+            } catch (e) {
+              console.error('[WindowsBar] Error launching auto-installer:', e);
+            }
+          }
+          resolve();
+        });
+
+        writer.on('error', (err: any) => {
+          console.error('[WindowsBar] Writer error:', err);
+          reject(err);
+        });
+      }).on('error', (e: any) => {
+        console.log('[WindowsBar] Network error:', e.message);
+        reject(e);
+      });
+    };
+
+    download(url);
+  });
+}
+
+// Manual update check - direct GitHub API + manual download
 ipcMain.handle('check-for-updates', async () => {
   if (isDev) {
-    console.log('[WindowsBar] Skipping update check in dev mode');
     return { available: false, currentVersion: app.getVersion(), error: 'Dev mode' };
   }
 
+  const currentVersion = app.getVersion();
+  console.log(`[WindowsBar] Check updates. Current: ${currentVersion}`);
+
+  if (updateReady) {
+    return { available: true, currentVersion, downloaded: true };
+  }
+
+  if (isDownloading) {
+    return { available: true, currentVersion, downloaded: false, downloadProgress: currentDownloadProgress };
+  }
+
   try {
-    console.log('[WindowsBar] Manual update check triggered');
-    const result = await autoUpdater.checkForUpdates();
-
-    if (result && result.updateInfo) {
-      const currentVersion = app.getVersion();
-      const latestVersion = result.updateInfo.version;
-
-      if (result.updateInfo.version !== currentVersion) {
-        console.log(`[WindowsBar] Update available: ${latestVersion}`);
+    console.log('[WindowsBar] Fetching GitHub API...');
+    const release: any = await fetchJSON('https://api.github.com/repos/JackyWein/Windows-Bar/releases/latest');
+    console.log('[WindowsBar] Got release:', release?.tag_name, release?.name);
+    
+    const latestVersion = release.tag_name?.replace('v', '') || release.name;
+    console.log(`[WindowsBar] Latest: ${latestVersion}, Current: ${currentVersion}`);
+    
+    // Compare versions properly
+    const curr = currentVersion.split('.').map(Number);
+    const latest = latestVersion.split('.').map(Number);
+    const needsUpdate = latest[0] > curr[0] || (latest[0] === curr[0] && latest[1] > curr[1]) || (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
+    
+    console.log(`[WindowsBar] Needs update: ${needsUpdate}, curr=${curr}, latest=${latest}`);
+    
+    if (needsUpdate) {
+      const asset = release.assets?.find((a: any) => a.name?.endsWith('.exe') && a.name.includes('Setup'));
+      console.log('[WindowsBar] Asset found:', asset?.name, asset?.browser_download_url);
+      
+      if (asset) {
+        console.log(`[WindowsBar] Found: ${asset.name}, URL: ${asset.browser_download_url}`);
+        isDownloading = true;
+        // Start manual download
+        downloadAndInstall(asset.browser_download_url, latestVersion).catch(e => {
+          console.error('[WindowsBar] DL Error:', e);
+          isDownloading = false;
+        });
         
-        if (!updateReady && currentDownloadProgress === null) {
-          console.log(`[WindowsBar] Background download started manually via UI check for ${latestVersion}`);
-          autoUpdater.downloadUpdate().catch(e => console.error('[WindowsBar] Manual UI download error:', e));
-        }
-
-        return {
+return {
           available: true,
           currentVersion,
           latestVersion,
-          releaseNotes: result.updateInfo.releaseNotes,
-          downloaded: updateReady,
-          downloadProgress: currentDownloadProgress,
+          releaseNotes: release.body,
+          downloaded: false,
+          downloadProgress: 0,
         };
-      } else {
-        console.log('[WindowsBar] No update available');
-        return { available: false, currentVersion };
       }
     }
-
-    return { available: false, currentVersion: app.getVersion() };
-  } catch (error) {
-    console.error('[WindowsBar] Update check failed:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
-    // Friendly error for uninstalled/unpacked versions (like the friend's code)
-    if (errorMessage.includes('ENOENT') || errorMessage.includes('app-update.yml')) {
-      return { available: false, currentVersion: app.getVersion(), error: 'Updates sind nur in der installierten Version verfügbar.' };
-    }
-
-    return {
-      available: false,
-      currentVersion: app.getVersion(),
-      error: errorMessage
-    };
+    return { available: false, currentVersion };
+  } catch (error) {
+    console.error('[WindowsBar] ERROR:', error);
+    return { available: false, currentVersion, error: String(error) };
   }
 });
 
-// Installiere das Update, wenn bereit
-ipcMain.on('install-update', () => {
-  console.log('[WindowsBar] Installiere Update (oder warte auf Download)...');
-  if (updateReady) {
-    autoUpdater.quitAndInstall(false, true);
-  } else {
+// Installiere das Update
+ipcMain.on('install-update', async () => {
+  console.log('[WindowsBar] Install clicked!');
+  
+  if (!updateReady) {
+    console.log('[WindowsBar] No update ready, setting installOnReady flag');
     installOnReady = true;
+    return;
+  }
+  
+  if (updateExePath) {
+    try {
+      console.log(`[WindowsBar] Installer: ${updateExePath}`);
+      
+      // Execute the installer silently and quit the app
+      const { spawn } = require('child_process');
+      const subprocess = spawn(updateExePath, ['/S', '/NCRC', '--force-run'], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      subprocess.unref();
+      
+      console.log('[WindowsBar] Installer launched, quitting app...');
+      app.quit();
+    } catch (e) {
+      console.error('[WindowsBar] Error launching auto-installer:', e);
+    }
+  } else {
+    // Fallback: If we don't have the path exactly, look in temp dir
+    const tempDir = app.getPath('temp');
+    try {
+      const files = await fs.promises.readdir(tempDir);
+      console.log('[WindowsBar] Files in temp:', files.filter(f => f.includes('WindowsBar')));
+      
+      const installer = files.find(f => f.includes('WindowsBar') && f.endsWith('.exe'));
+      
+      if (installer) {
+        const exePath = join(tempDir, installer);
+        console.log(`[WindowsBar] Installer (fallback): ${exePath}`);
+        
+        const { spawn } = require('child_process');
+        const subprocess = spawn(exePath, ['/S', '/NCRC', '--force-run'], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        subprocess.unref();
+        
+        console.log('[WindowsBar] Installer launched, quitting app...');
+        app.quit();
+      } else {
+        console.log('[WindowsBar] No installer found');
+        shell.openPath(tempDir);
+      }
+    } catch (e) {
+      console.error('[WindowsBar] Error:', e);
+    }
   }
 });
 
