@@ -72,7 +72,6 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "plugins/**/*",
       "package.json"
     ]
   }

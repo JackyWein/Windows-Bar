@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Play, Pause, SkipForward, SkipBack, Volume2, Music } from 'lucide-react';
-import '../styles/youtube-music.css';
+import '../styles/media-control.css';
 
 interface MediaControlViewProps {
   onBack: () => void;

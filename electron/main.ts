@@ -800,42 +800,12 @@ app.whenReady().then(async () => {
   // Register plugin IPC handlers
   registerPluginIPC();
 
-  // Auto-copy bundled plugins on first start
+  // Ensure plugins directory exists (no longer bundled by default)
   try {
     const pluginsDir = join(app.getPath('userData'), 'plugins');
     await fs.mkdir(pluginsDir, { recursive: true });
-    const bundledPluginsDir = join(__dirname, '..', 'plugins');
-    
-    // Read bundled plugins directory
-    const bundledEntries = await fs.readdir(bundledPluginsDir, { withFileTypes: true });
-    
-    for (const entry of bundledEntries) {
-      if (!entry.isDirectory()) continue;
-      
-      const manifestPath = join(bundledPluginsDir, entry.name, 'manifest.json');
-      const destDir = join(pluginsDir, entry.name);
-      
-      // Check if plugin already exists
-      try {
-        await fs.access(join(destDir, 'manifest.json'));
-        continue; // Already installed
-      } catch {
-        // Not installed, copy from bundled
-        try {
-          await fs.access(manifestPath);
-          await fs.cp(join(bundledPluginsDir, entry.name), destDir, { recursive: true });
-          
-          // Create default settings file
-          const settingsPath = join(destDir, 'settings.json');
-          await fs.writeFile(settingsPath, JSON.stringify({}, null, 2));
-          console.log(`[WindowsBar] Auto-installed plugin: ${entry.name}`);
-        } catch {
-          console.log(`[WindowsBar] Could not install plugin: ${entry.name}`);
-        }
-      }
-    }
   } catch (err) {
-    console.error('[WindowsBar] Error auto-installing plugins:', err);
+    console.error('[WindowsBar] Error ensuring plugins directory:', err);
   }
 
   // Load all plugins

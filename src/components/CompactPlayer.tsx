@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Play, Pause, SkipForward, Music } from 'lucide-react';
-import '../styles/youtube-music.css';
+import '../styles/media-control.css';
 
 interface CompactPlayerProps {
   onExpand: () => void;
