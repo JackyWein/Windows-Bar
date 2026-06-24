@@ -36,6 +36,41 @@ interface ElectronAPI {
   readClipboard: () => Promise<string>;
   writeClipboard: (text: string) => void;
 
+  // Power & run
+  runProgram: (program: string) => Promise<{ success: boolean; error?: string }>;
+  lockPC: () => void;
+  shutdownPC: () => void;
+  restartPC: () => void;
+  signOut: () => void;
+  setVolumeAbsolute: (level: number) => Promise<{ success: boolean }>;
+
+  // Network & system tools
+  getLocalIp: () => Promise<{ ipv4: string[]; ipv6: string[]; hostname: string }>;
+  getNetworkInfo: () => Promise<{ ssid?: string; signal?: string; type?: string; profiles?: string[] }>;
+  getBattery: () => Promise<{ percent: number; charging: boolean; remaining?: string } | null>;
+  pingHost: (host: string) => Promise<{ host: string; avg?: string; loss?: string; output: string }>;
+  dnsLookup: (host: string) => Promise<{ host: string; addresses: string[] }>;
+  runSpeedtest: () => Promise<{ downloadMbps: number; pingMs: number }>;
+  onSpeedtestProgress: (callback: (data: { phase: string; mbps: number; progress: number }) => void) => void;
+  removeSpeedtestListeners: () => void;
+
+  // Global hotkey
+  setGlobalHotkey: (accelerator: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Window sizing
+  setWindowWidth: (width: number) => void;
+
+  // Clipboard history monitor
+  startClipboardMonitor: (enabled: boolean) => void;
+  getClipboardHistory: () => Promise<{ type: string; value: string; ts: number }[]>;
+  clearClipboardHistory: () => Promise<boolean>;
+  removeClipboardHistoryItem: (index: number) => Promise<boolean>;
+  onClipboardChange: (callback: (history: { type: string; value: string; ts: number }[]) => void) => void;
+
+  // System theme
+  getSystemTheme: () => Promise<'light' | 'dark'>;
+  onSystemThemeChange: (callback: (theme: 'light' | 'dark') => void) => void;
+
   // AI Chat
   aiChat: (request: AIChatRequest) => Promise<unknown>;
   aiAbort: () => void;

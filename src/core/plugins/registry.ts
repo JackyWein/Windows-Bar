@@ -80,7 +80,7 @@ function createPluginContext(
 
 function createPluginAPI(pluginId: string): PluginAPI {
   return {
-    getPlugin: (id: string) => loadedPlugins.get(id),
+    getPlugin: (id: string) => loadedPlugins.get(id) ?? null,
     getPluginSettings: (id: string) => pluginSettings.get(id) || {},
     
     registerCommand: (command: PluginCommand) => {
@@ -129,7 +129,7 @@ function createPluginAPI(pluginId: string): PluginAPI {
       // This would need proper context - simplified for now
       return { commandId, args };
     },
-  };
+  } as PluginAPI;
 }
 
 const logger = {
@@ -223,7 +223,7 @@ export const pluginRegistry = {
       // Execute onLoad hook if exists
       const hooks = pluginHooks.get(pluginId);
       if (hooks?.has('onLoad')) {
-        const onLoad = hooks.get('onLoad') as (ctx: PluginContext, api: PluginAPI) => void | Promise<void>;
+        const onLoad = hooks.get('onLoad') as unknown as (ctx: PluginContext, api: PluginAPI) => void | Promise<void>;
         await onLoad(ctx, api);
       }
       

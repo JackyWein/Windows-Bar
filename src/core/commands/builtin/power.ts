@@ -1,5 +1,7 @@
 import type { Command } from '../../../types';
 
+const api = () => (window as { electronAPI: typeof window.electronAPI }).electronAPI;
+
 const powerCommands: readonly Command[] = [
   {
     id: 'sleep',
@@ -7,9 +9,11 @@ const powerCommands: readonly Command[] = [
     description: 'Bildschirm ausschalten',
     category: 'power',
     handler(_args, ctx) {
-      ctx.api.sleepDisplay();
       return {
-        results: [{ id: 'cmd-sleep', title: 'Bildschirm ausschalten', subtitle: 'Wird ausgeführt...', type: 'system' }],
+        results: [{
+          id: 'cmd-sleep', title: 'Bildschirm ausschalten', subtitle: 'Enter zum Ausführen', type: 'system',
+          action: () => { ctx.api.sleepDisplay(); api()?.hideWindow(); }
+        }],
       };
     },
     enabled: true,
@@ -20,9 +24,31 @@ const powerCommands: readonly Command[] = [
     description: 'Stummschalten umschalten',
     category: 'power',
     handler(_args, ctx) {
-      ctx.api.toggleMute();
       return {
-        results: [{ id: 'cmd-mute', title: 'Stummschalten', subtitle: 'Wird ausgeführt...', type: 'system' }],
+        results: [{
+          id: 'cmd-mute', title: 'Stummschalten umschalten', subtitle: 'Enter zum Ausführen', type: 'system',
+          action: () => { ctx.api.toggleMute(); api()?.hideWindow(); }
+        }],
+      };
+    },
+    enabled: true,
+  },
+  {
+    id: 'volume',
+    trigger: '/volume',
+    description: 'Lautstärke setzen (0–100)',
+    usage: '/volume 50  •  /volume 0  •  /volume 100',
+    category: 'power',
+    handler(args) {
+      const level = Math.max(0, Math.min(100, parseInt(args.trim(), 10)));
+      if (isNaN(level)) {
+        return { results: [{ id: 'cmd-err', title: 'Ungültige Lautstärke', subtitle: '/volume 50 (0–100)', type: 'system' }] };
+      }
+      return {
+        results: [{
+          id: 'cmd-volume', title: `Lautstärke auf ${level}%`, subtitle: 'Enter zum Setzen', type: 'system',
+          action: () => { api()?.setVolumeAbsolute(level); api()?.hideWindow(); }
+        }],
       };
     },
     enabled: true,
@@ -33,9 +59,11 @@ const powerCommands: readonly Command[] = [
     description: 'Papierkorb leeren',
     category: 'power',
     handler(_args, ctx) {
-      ctx.api.emptyTrash();
       return {
-        results: [{ id: 'cmd-trash', title: 'Papierkorb leeren', subtitle: 'Wird ausgeführt...', type: 'system' }],
+        results: [{
+          id: 'cmd-trash', title: 'Papierkorb leeren', subtitle: 'Enter zum Ausführen', type: 'system',
+          action: () => { ctx.api.emptyTrash(); api()?.hideWindow(); }
+        }],
       };
     },
     enabled: true,
@@ -46,9 +74,11 @@ const powerCommands: readonly Command[] = [
     description: 'Screenshot erstellen',
     category: 'power',
     handler(_args, ctx) {
-      ctx.api.takeScreenshot();
       return {
-        results: [{ id: 'cmd-ss', title: 'Screenshot erstellt', subtitle: 'Gespeichert in Bilder', type: 'system' }],
+        results: [{
+          id: 'cmd-ss', title: 'Screenshot erstellen', subtitle: 'Enter zum Ausführen (Gespeichert in Bilder)', type: 'system',
+          action: () => { ctx.api.takeScreenshot(); api()?.hideWindow(); }
+        }],
       };
     },
     enabled: true,
@@ -58,10 +88,12 @@ const powerCommands: readonly Command[] = [
     trigger: '/lock',
     description: 'PC sperren',
     category: 'power',
-    handler(_args, ctx) {
-      ctx.api.openUrl('cmd://lock');
+    handler() {
       return {
-        results: [{ id: 'cmd-lock', title: 'PC sperren', subtitle: 'Wird ausgeführt...', type: 'system' }],
+        results: [{
+          id: 'cmd-lock', title: 'PC sperren', subtitle: 'Enter zum Ausführen', type: 'system',
+          action: () => { api()?.lockPC(); }
+        }],
       };
     },
     enabled: true,
@@ -71,10 +103,12 @@ const powerCommands: readonly Command[] = [
     trigger: '/shutdown',
     description: 'Herunterfahren',
     category: 'power',
-    handler(_args, ctx) {
-      ctx.api.openUrl('cmd://shutdown');
+    handler() {
       return {
-        results: [{ id: 'cmd-shut', title: 'Herunterfahren', subtitle: 'PC wird heruntergefahren...', type: 'system' }],
+        results: [{
+          id: 'cmd-shut', title: 'Herunterfahren', subtitle: 'Enter zum Ausführen — fährt den PC herunter!', type: 'system',
+          action: () => { api()?.shutdownPC(); }
+        }],
       };
     },
     enabled: true,
@@ -84,10 +118,28 @@ const powerCommands: readonly Command[] = [
     trigger: '/restart',
     description: 'Neustart',
     category: 'power',
-    handler(_args, ctx) {
-      ctx.api.openUrl('cmd://restart');
+    handler() {
       return {
-        results: [{ id: 'cmd-rest', title: 'Neustart', subtitle: 'PC wird neu gestartet...', type: 'system' }],
+        results: [{
+          id: 'cmd-rest', title: 'Neustart', subtitle: 'Enter zum Ausführen — startet den PC neu!', type: 'system',
+          action: () => { api()?.restartPC(); }
+        }],
+      };
+    },
+    enabled: true,
+  },
+  {
+    id: 'logoff',
+    trigger: '/logoff',
+    description: 'Abmelden',
+    aliases: ['/signout'],
+    category: 'power',
+    handler() {
+      return {
+        results: [{
+          id: 'cmd-logoff', title: 'Abmelden', subtitle: 'Enter zum Ausführen', type: 'system',
+          action: () => { api()?.signOut(); }
+        }],
       };
     },
     enabled: true,

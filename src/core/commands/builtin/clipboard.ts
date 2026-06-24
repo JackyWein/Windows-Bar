@@ -1,55 +1,41 @@
-import type { Command } from '../../../types';
+import type { Command, SearchResult } from '../../../types';
 
-const CLIPBOARD_HISTORY_KEY = 'windowsbar_clipboard_history';
+const api = () => (window as { electronAPI: typeof window.electronAPI }).electronAPI;
 
-function loadClipboardHistory(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(CLIPBOARD_HISTORY_KEY) || '[]') as string[];
-  } catch {
-    return [];
-  }
-}
-
-function saveClipboardHistory(history: string[]): void {
-  localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(history.slice(0, 15)));
+function timeAgo(ts: number): string {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return 'gerade eben';
+  if (diff < 3600) return `vor ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} h`;
+  return `vor ${Math.floor(diff / 86400)} Tagen`;
 }
 
 const clipboardCommands: readonly Command[] = [
   {
     id: 'cp',
     trigger: '/cp ',
-    description: 'Text in Zwischenablage kopieren',
-    usage: 'z.B. /cp Hallo Welt',
+    description: 'Text kopieren / Zwischenablage lesen',
+    usage: 'z.B. /cp Hallo Welt  •  /cp (leer = aktuellen Inhalt zeigen)',
     category: 'clipboard',
     requiresSetting: 'features.clipboardHistory',
     async handler(args: string) {
       const text = args.trim();
       if (!text) {
-        // Read from clipboard
         try {
-          const content = await navigator.clipboard.readText();
-          const preview = content.length > 50 ? content.substring(0, 50) + '...' : content;
-          return {
-            results: [{ id: 'cmd-cp-get', title: preview || '(Leer)', subtitle: 'Zwischenablage-Inhalt', type: 'system', path: content }],
-          };
+          const content = await api().readClipboard();
+          const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
+          return { results: [{ id: 'cmd-cp-get', title: preview || '(Leer)', subtitle: 'Aktueller Zwischenablage-Inhalt', type: 'system', path: content, copyToClipboard: content }] };
         } catch {
-          return { results: [{ id: 'cmd-err', title: 'Zugriff verweigert', subtitle: 'Clipboard-Berechtigung erforderlich', type: 'system' }] };
+          return { results: [{ id: 'cmd-err', title: 'Zwischenablage nicht lesbar', subtitle: 'Fehler', type: 'system' }] };
         }
       }
-      // Write to clipboard
-      try {
-        await navigator.clipboard.writeText(text);
-        // Also save to history
-        const history = loadClipboardHistory();
-        const filtered = history.filter(item => item !== text);
-        saveClipboardHistory([text, ...filtered]);
-        const preview = text.length > 30 ? text.substring(0, 30) + '...' : text;
-        return {
-          results: [{ id: 'cmd-cp-set', title: 'Kopiert!', subtitle: `"${preview}"`, type: 'system' }],
-        };
-      } catch {
-        return { results: [{ id: 'cmd-err', title: 'Fehler beim Kopieren', subtitle: 'Zwischenablage nicht verfügbar', type: 'system' }] };
-      }
+      const preview = text.length > 30 ? text.substring(0, 30) + '…' : text;
+      return {
+        results: [{
+          id: 'cmd-cp-set', title: 'Kopieren', subtitle: `"${preview}" in die Zwischenablage`, type: 'system',
+          action: () => { api().writeClipboard(text); api().hideWindow(); },
+        }],
+      };
     },
     enabled: true,
   },
@@ -57,23 +43,25 @@ const clipboardCommands: readonly Command[] = [
     id: 'history',
     trigger: '/history',
     description: 'Zwischenablage-Verlauf anzeigen',
+    aliases: ['/clip'],
     category: 'clipboard',
     requiresSetting: 'features.clipboardHistory',
-    handler() {
-      const history = loadClipboardHistory();
+    async handler() {
+      let history: { type: string; value: string; ts: number }[] = [];
+      try { history = await api().getClipboardHistory(); } catch { /* ignore */ }
 
-      if (history.length === 0) {
-        return { results: [{ id: 'cmd-hist', title: 'Verlauf leer', subtitle: 'Kopiere Text mit /cp Text', type: 'system' }] };
+      if (!history || history.length === 0) {
+        return { results: [{ id: 'cmd-hist', title: 'Verlauf leer', subtitle: 'Kopiere etwas — es erscheint hier automatisch', type: 'system' }] };
       }
 
-      const results = history.map((text, i) => ({
-        id: `hist-${i}`,
-        title: text.length > 50 ? text.substring(0, 50) + '...' : text,
-        subtitle: 'Klicken zum Kopieren',
-        type: 'system' as const,
-        path: text,
-        copyToClipboard: text,
-      }));
+      const results: SearchResult[] = history.slice(0, 30).map((entry, i) => {
+        if (entry.type === 'image') {
+          return { id: `hist-${i}`, title: '🖼️ Bild', subtitle: timeAgo(entry.ts), type: 'system', iconBase64: entry.value };
+        }
+        const oneLine = entry.value.replace(/\s+/g, ' ').trim();
+        const preview = oneLine.length > 60 ? oneLine.substring(0, 60) + '…' : oneLine;
+        return { id: `hist-${i}`, title: preview || '(Leer)', subtitle: `${timeAgo(entry.ts)} • Enter zum Kopieren`, type: 'system', path: entry.value, copyToClipboard: entry.value };
+      });
       return { results };
     },
     enabled: true,
@@ -85,9 +73,11 @@ const clipboardCommands: readonly Command[] = [
     category: 'clipboard',
     requiresSetting: 'features.clipboardHistory',
     handler() {
-      localStorage.removeItem(CLIPBOARD_HISTORY_KEY);
       return {
-        results: [{ id: 'cmd-clear-hist', title: 'Verlauf gelöscht', subtitle: 'Zwischenablage-Verlauf wurde geleert', type: 'system' }],
+        results: [{
+          id: 'cmd-clear-hist', title: 'Verlauf löschen', subtitle: 'Enter zum Leeren des Zwischenablage-Verlaufs', type: 'system',
+          action: () => { api().clearClipboardHistory(); api().hideWindow(); },
+        }],
       };
     },
     enabled: true,

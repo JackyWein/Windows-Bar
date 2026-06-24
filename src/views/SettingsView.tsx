@@ -5,9 +5,9 @@ import {
   Monitor, Globe, SlidersHorizontal,
   Search, Terminal, Download, Puzzle,
   FolderOpen, Trash2, RefreshCw, History,
-  Power, Settings as SettingsIcon,
+  Power, Settings as SettingsIcon, Keyboard, Plus, X,
 } from 'lucide-react';
-import type { AppSettings } from '../types';
+import type { AppSettings, Theme, ThemeColors } from '../types';
 import { builtinThemes } from '../core/settings/themes';
 import { commandRegistry } from '../core/commands/registry';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -36,6 +36,7 @@ const accentColors = [
 const settingsCategories = [
   { id: 'themes', label: 'Themes', icon: Palette },
   { id: 'appearance', label: 'Aussehen', icon: SlidersHorizontal },
+  { id: 'keybindings', label: 'Tastenkürzel', icon: Keyboard },
   { id: 'system', label: 'System', icon: Monitor },
   { id: 'search', label: 'Suche', icon: Search },
   { id: 'commands', label: 'Befehle', icon: Terminal },
@@ -44,6 +45,46 @@ const settingsCategories = [
   { id: 'privacy', label: 'Datenschutz', icon: Lock },
   { id: 'changelog', label: 'Changelog', icon: History },
   { id: 'about', label: 'Über', icon: Info },
+];
+
+// Build an Electron accelerator string from a keyboard event.
+function eventToAccelerator(e: React.KeyboardEvent): string | null {
+  const mods: string[] = [];
+  if (e.ctrlKey) mods.push('Control');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  if (e.metaKey) mods.push('Super');
+  const k = e.key;
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(k)) return null; // modifier alone
+  let main = '';
+  if (k === ' ' || k === 'Spacebar') main = 'Space';
+  else if (k.length === 1) main = k.toUpperCase();
+  else if (/^Arrow/.test(k)) main = k.replace('Arrow', '');
+  else main = k.charAt(0).toUpperCase() + k.slice(1);
+  if (!main) return null;
+  return [...mods, main].join('+');
+}
+
+// Relative luminance of a hex color (0 = black, 1 = white).
+function hexLum(hex: string): number {
+  const h = (hex || '#000').replace('#', '');
+  const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0');
+  const r = parseInt(n.slice(0, 2), 16) / 255;
+  const g = parseInt(n.slice(2, 4), 16) / 255;
+  const b = parseInt(n.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+// Editable (string-valued) color fields exposed in the Theme-Builder.
+type ThemeColorKey = 'bg' | 'text' | 'textMuted' | 'accent' | 'game' | 'file' | 'web';
+const THEME_FIELDS: ReadonlyArray<{ key: ThemeColorKey; label: string }> = [
+  { key: 'bg', label: 'Hintergrund' },
+  { key: 'text', label: 'Text' },
+  { key: 'textMuted', label: 'Text gedimmt' },
+  { key: 'accent', label: 'Akzent' },
+  { key: 'game', label: 'Spiele' },
+  { key: 'file', label: 'Dateien' },
+  { key: 'web', label: 'Web' },
 ];
 
 export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onClearData }: SettingsViewProps) {
@@ -55,6 +96,13 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   const [pluginSettings, setPluginSettings] = useState<Record<string, unknown>>({});
   const [pluginSettingsSchema, setPluginSettingsSchema] = useState<any[]>([]);
   const [confirmDialog, confirm] = useConfirm();
+
+  // Customization state
+  const [capturingHotkey, setCapturingHotkey] = useState(false);
+  const [themeBuilderOpen, setThemeBuilderOpen] = useState(false);
+  const [draftColors, setDraftColors] = useState<ThemeColors | null>(null);
+  const [draftName, setDraftName] = useState('Mein Theme');
+  const [settingsQuery, setSettingsQuery] = useState('');
 
   // Update check state
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -214,21 +262,33 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
 
         <div className="settings-container">
           <div className="settings-sidebar">
-            {settingsCategories.map(cat => (
-              <button
-                key={cat.id}
-                className={`settings-nav-item ${activeCategory === cat.id ? 'active' : ''}`}
-                onClick={() => setActiveCategory(cat.id)}
-              >
-                <cat.icon size={16} />
-                <span>{cat.label}</span>
-              </button>
-            ))}
+            <div className="settings-search">
+              <Search size={14} />
+              <input
+                type="text"
+                placeholder="Einstellungen suchen…"
+                value={settingsQuery}
+                onChange={e => setSettingsQuery(e.target.value)}
+              />
+            </div>
+            {settingsCategories
+              .filter(cat => !settingsQuery.trim() || cat.label.toLowerCase().includes(settingsQuery.trim().toLowerCase()))
+              .map(cat => (
+                <button
+                  key={cat.id}
+                  className={`settings-nav-item ${activeCategory === cat.id ? 'active' : ''}`}
+                  onClick={() => setActiveCategory(cat.id)}
+                >
+                  <cat.icon size={16} />
+                  <span>{cat.label}</span>
+                </button>
+              ))}
           </div>
 
           <div className="settings-content">
             {activeCategory === 'themes' && renderThemes()}
             {activeCategory === 'appearance' && renderAppearance()}
+            {activeCategory === 'keybindings' && renderKeybindings()}
             {activeCategory === 'system' && renderSystem()}
             {activeCategory === 'search' && renderSearch()}
             {activeCategory === 'commands' && renderCommands()}
@@ -248,30 +308,113 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
   // THEMES
   // ========================
   function renderThemes() {
+    const customThemes = settings.appearance.customThemes ?? [];
+    const allThemes = [...builtinThemes, ...customThemes];
+    const currentTheme = allThemes.find(t => t.id === settings.appearance.theme) ?? builtinThemes[0];
+
+    const deleteCustomTheme = (id: string) => {
+      const next = customThemes.filter(t => t.id !== id);
+      onUpdateSetting('appearance', 'customThemes', next);
+      if (settings.appearance.theme === id) handleThemeSelect('dark-default');
+    };
+
+    const openBuilder = () => {
+      setDraftColors({ ...currentTheme.colors });
+      setDraftName('Mein Theme');
+      setThemeBuilderOpen(true);
+    };
+
+    const saveCustomTheme = () => {
+      if (!draftColors) return;
+      const light = hexLum(draftColors.bg) > 0.55;
+      const colors: ThemeColors = {
+        ...draftColors,
+        surface: light ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)',
+        border: light ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.10)',
+        accentHover: draftColors.accent,
+        app: draftColors.accent,
+        system: draftColors.textMuted,
+        bgAlpha: draftColors.bgAlpha ?? 0.85,
+      };
+      const newTheme: Theme = {
+        id: `custom-${Date.now()}`,
+        name: draftName.trim() || 'Mein Theme',
+        type: 'custom',
+        colors,
+        blur: { enabled: settings.appearance.blur.enabled, amount: settings.appearance.blur.amount },
+        radius: settings.appearance.borderRadius,
+        fontSize: settings.appearance.fontSize,
+        fontFamily: settings.appearance.fontFamily,
+      };
+      onUpdateSetting('appearance', 'customThemes', [...customThemes, newTheme]);
+      updateAppearance('theme', newTheme.id);
+      updateAppearance('accentColor', newTheme.colors.accent);
+      setThemeBuilderOpen(false);
+    };
+
     return (
       <div className="settings-section">
         <h2 className="settings-title">Themes</h2>
         <div className="settings-group">
           <div className="theme-grid">
-            {builtinThemes.map(theme => (
-              <button
-                key={theme.id}
-                className={`theme-card ${settings.appearance.theme === theme.id ? 'selected' : ''}`}
-                onClick={() => handleThemeSelect(theme.id)}
-              >
-                <div className="theme-preview" style={{
-                  background: theme.colors.bg,
-                  border: `1px solid ${theme.colors.border}`,
-                  borderRadius: `${theme.radius}px`,
-                }}>
-                  <div className="theme-preview-accent" style={{ background: theme.colors.accent }} />
-                  <div className="theme-preview-text" style={{ color: theme.colors.text }}>Aa</div>
-                  <div className="theme-preview-muted" style={{ color: theme.colors.textMuted }}>···</div>
-                </div>
-                <span className="theme-name">{theme.name}</span>
-                {settings.appearance.theme === theme.id && <Check size={12} className="theme-check" />}
-              </button>
-            ))}
+            {allThemes.map(theme => {
+              const isCustom = customThemes.some(t => t.id === theme.id);
+              return (
+                <button
+                  key={theme.id}
+                  className={`theme-card ${settings.appearance.theme === theme.id ? 'selected' : ''}`}
+                  onClick={() => handleThemeSelect(theme.id)}
+                  style={{ position: 'relative' }}
+                >
+                  <div className="theme-preview" style={{
+                    background: theme.colors.bg,
+                    border: `1px solid ${theme.colors.border}`,
+                    borderRadius: `${theme.radius}px`,
+                  }}>
+                    <div className="theme-preview-accent" style={{ background: theme.colors.accent }} />
+                    <div className="theme-preview-text" style={{ color: theme.colors.text }}>Aa</div>
+                    <div className="theme-preview-muted" style={{ color: theme.colors.textMuted }}>···</div>
+                  </div>
+                  <span className="theme-name">{theme.name}</span>
+                  {settings.appearance.theme === theme.id && <Check size={12} className="theme-check" />}
+                  {isCustom && (
+                    <span
+                      role="button"
+                      title="Theme löschen"
+                      onClick={(e) => { e.stopPropagation(); deleteCustomTheme(theme.id); }}
+                      style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,0.5)', borderRadius: 6, padding: 2, display: 'flex', cursor: 'pointer' }}
+                    >
+                      <Trash2 size={11} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Eigenes Theme erstellen</span>
+              <span className="settings-item-desc">Farben frei wählen mit Live-Vorschau</span>
+            </div>
+            <button className="settings-btn" onClick={openBuilder}>
+              <Plus size={14} style={{ marginRight: 6 }} />Erstellen
+            </button>
+          </div>
+
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">System folgen (Hell/Dunkel)</span>
+              <span className="settings-item-desc">Theme automatisch an Windows-Einstellung anpassen</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={!!settings.appearance.autoTheme}
+                onChange={e => updateAppearance('autoTheme', e.target.checked)}
+              />
+              <span className="toggle-slider" />
+            </label>
           </div>
 
           <div className="settings-item">
@@ -300,15 +443,75 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
               <span className="settings-item-desc">Aktuelle Farben als JSON kopieren</span>
             </div>
             <button className="settings-btn" onClick={() => {
-              const theme = builtinThemes.find(t => t.id === settings.appearance.theme);
-              if (theme) {
-                navigator.clipboard.writeText(JSON.stringify(theme.colors, null, 2));
-              }
+              window.electronAPI?.writeClipboard?.(JSON.stringify(currentTheme.colors, null, 2));
             }}>
               <Download size={14} style={{ marginRight: 6 }} />Exportieren
             </button>
           </div>
         </div>
+
+        {/* Theme-Builder Modal */}
+        {themeBuilderOpen && draftColors && (
+          <div
+            onClick={() => setThemeBuilderOpen(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: 'var(--surface)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', border: '1px solid var(--border)', borderRadius: 16, width: 440, maxHeight: '82vh', overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Theme-Builder</h3>
+                <button className="settings-btn" style={{ padding: 6 }} onClick={() => setThemeBuilderOpen(false)}><X size={14} /></button>
+              </div>
+
+              {/* Live preview */}
+              <div style={{ padding: 20 }}>
+                <div style={{ background: draftColors.bg, border: `1px solid ${draftColors.accent}33`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: 6, background: draftColors.accent }} />
+                    <span style={{ color: draftColors.text, fontWeight: 600 }}>{draftName || 'Mein Theme'}</span>
+                  </div>
+                  <div style={{ color: draftColors.text, fontSize: 13 }}>Beispiel-Ergebnis</div>
+                  <div style={{ color: draftColors.textMuted, fontSize: 11 }}>so sieht ein gedimmter Untertitel aus</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <span style={{ color: draftColors.game, fontSize: 11 }}>● Spiel</span>
+                    <span style={{ color: draftColors.file, fontSize: 11 }}>● Datei</span>
+                    <span style={{ color: draftColors.web, fontSize: 11 }}>● Web</span>
+                  </div>
+                </div>
+
+                <label className="settings-item-title" style={{ display: 'block', marginBottom: 6 }}>Name</label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  style={{ width: '100%', marginBottom: 14 }}
+                  value={draftName}
+                  onChange={e => setDraftName(e.target.value)}
+                />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {THEME_FIELDS.map(f => (
+                    <label key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                      <span>{f.label}</span>
+                      <input
+                        type="color"
+                        value={String(draftColors[f.key])}
+                        onChange={e => setDraftColors(prev => prev ? { ...prev, [f.key]: e.target.value } : prev)}
+                        style={{ width: 40, height: 28, border: '1px solid var(--border)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+                <button className="settings-btn" onClick={() => setThemeBuilderOpen(false)}>Abbrechen</button>
+                <button className="settings-btn" style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }} onClick={saveCustomTheme}>Speichern & Aktivieren</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -403,6 +606,19 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             />
           </div>
 
+          <div className="settings-item slider-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Fensterbreite</span>
+              <span className="settings-item-desc">Breite der Suchleiste: {settings.appearance.windowWidth}px</span>
+            </div>
+            <input
+              type="range" className="settings-slider"
+              value={settings.appearance.windowWidth}
+              onChange={e => updateAppearance('windowWidth', parseInt(e.target.value))}
+              min={560} max={1100} step={10}
+            />
+          </div>
+
           <div className="settings-item">
             <div className="settings-item-info">
               <span className="settings-item-title">Scrollbar anzeigen</span>
@@ -440,6 +656,62 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
             </div>
             <button className="settings-btn" onClick={onReset}>Zurücksetzen</button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================
+  // KEYBINDINGS
+  // ========================
+  function renderKeybindings() {
+    const current = settings.shortcuts?.toggle || 'Alt+Space';
+    return (
+      <div className="settings-section">
+        <h2 className="settings-title">Tastenkürzel</h2>
+        <div className="settings-group">
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Globaler Hotkey</span>
+              <span className="settings-item-desc">Tastenkombination zum Öffnen/Schließen der Bar</span>
+            </div>
+            <button
+              className="settings-btn"
+              style={capturingHotkey ? { borderColor: 'var(--accent)', color: 'var(--accent)', minWidth: 140 } : { minWidth: 140 }}
+              onClick={() => setCapturingHotkey(true)}
+              onBlur={() => setCapturingHotkey(false)}
+              onKeyDown={(e) => {
+                if (!capturingHotkey) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.key === 'Escape') { setCapturingHotkey(false); return; }
+                const accel = eventToAccelerator(e);
+                if (accel) {
+                  onUpdateSetting('shortcuts', 'toggle', accel);
+                  window.electronAPI?.setGlobalHotkey?.(accel);
+                  setCapturingHotkey(false);
+                }
+              }}
+            >
+              {capturingHotkey ? 'Taste drücken…' : current}
+            </button>
+          </div>
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <span className="settings-item-title">Auf Standard zurücksetzen</span>
+              <span className="settings-item-desc">Hotkey wieder auf Alt+Space setzen</span>
+            </div>
+            <button
+              className="settings-btn"
+              onClick={() => { onUpdateSetting('shortcuts', 'toggle', 'Alt+Space'); window.electronAPI?.setGlobalHotkey?.('Alt+Space'); }}
+            >
+              Zurücksetzen
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+            Klicke auf das Feld und drücke deine Wunsch-Kombination (z.B. <code>Alt+Space</code>, <code>Control+Shift+K</code>).
+            Manche Kombinationen sind vom System reserviert und lassen sich nicht belegen.
+          </p>
         </div>
       </div>
     );

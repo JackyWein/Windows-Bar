@@ -20,6 +20,10 @@ export interface SearchResult {
   helpCommands?: string;
   copyToClipboard?: string;
   folderDepth?: number;
+  /** Hex/CSS color to render as a swatch next to the result (e.g. /color command) */
+  swatch?: string;
+  /** Marks a pinned/bookmarked result */
+  isBookmark?: boolean;
   action?: () => void;
 }
 
@@ -108,6 +112,10 @@ export interface AppSettings {
     windowHeight: number;
     showScrollbar: boolean;
     compactMode: boolean;
+    /** Follow the Windows system light/dark preference automatically */
+    autoTheme?: boolean;
+    /** User-created custom themes (Theme-Builder) */
+    customThemes?: Theme[];
   };
   system: {
     autoStart: boolean;
@@ -152,10 +160,12 @@ export const defaultSettings: AppSettings = {
     blur: { enabled: true, amount: 40 },
     transparency: 85,
     borderRadius: 14,
-    windowWidth: 680,
+    windowWidth: 750,
     windowHeight: 600,
     showScrollbar: true,
     compactMode: false,
+    autoTheme: false,
+    customThemes: [],
   },
   system: {
     autoStart: true,
@@ -173,7 +183,7 @@ export const defaultSettings: AppSettings = {
   commands: {
     enabled: {},
   },
-  shortcuts: {},
+  shortcuts: { toggle: 'Alt+Space' },
   features: {
     weatherEnabled: true,
     aiEnabled: true,

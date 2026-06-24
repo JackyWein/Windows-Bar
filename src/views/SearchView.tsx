@@ -114,6 +114,8 @@ function calculateScore(itemTitle: string, itemType: string, itemIdOrPath: strin
   // +5 Punkte pro Klick, maximal +50 Punkte Bonus
   const historyBonus = Math.min(clicks * 5, 50);
 
+  if (baseScore === 0) return 0;
+
   return (baseScore * mult) + historyBonus;
 }
 
@@ -157,7 +159,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
 
   // Load recents & Click History on mount & check for updates
   useEffect(() => {
-    const savedRecents = localStorage.getItem('recent_searches');
+    const savedRecents = localStorage.getItem('recent_searches_v2');
     if (savedRecents) {
       try { setRecentItems(JSON.parse(savedRecents)); } catch { /* ignore */ }
     }
@@ -194,7 +196,6 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
     const focusFn = () => {
       inputRef.current?.focus();
       setQuery('');
-      setResults([]);
       setSelectedIndex(0);
       setFocusedZone(FOCUS_ZONE_INPUT);
     };
@@ -356,13 +357,15 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
             const identifier = item.path || item.id;
             item._score = calculateScore(item.title, item.type, identifier, searchTerm || '', clickHistory);
           });
-          driveFiltered.sort((a: any, b: any) => b._score - a._score);
+          
+          const filteredDrive = searchTerm ? driveFiltered.filter((item: any) => item._score > 0) : driveFiltered;
+          filteredDrive.sort((a: any, b: any) => b._score - a._score);
 
-          if (driveFiltered.length === 0) {
+          if (filteredDrive.length === 0) {
             setResults([{ id: 'drive-empty', title: `Keine Ergebnisse auf Drive ${driveLetter}:`, subtitle: searchTerm ? `"${searchTerm}" nicht gefunden` : 'Keine Dateien auf diesem Laufwerk', type: 'system' }]);
           } else {
-            setResults(driveFiltered);
-            const iconCandidates = driveFiltered.filter(r => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
+            setResults(filteredDrive);
+            const iconCandidates = filteredDrive.filter((r: any) => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
             for (const item of iconCandidates) {
               (window as any).electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
                 if (icon && isActive.current) {
@@ -541,14 +544,17 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
           item._score = calculateScore(item.title, item.type, identifier, query, clickHistory);
         });
 
-        // Absteigend nach Score sortieren (Höchster Score = Platz 1)
-        mappedLocal.sort((a: any, b: any) => b._score - a._score);
+        // Filter out items that have no match at all (score 0), except the direct URL fallback
+        const filteredLocal = mappedLocal.filter((item: any) => item._score > 0 || item.id === 'direct-url');
 
-        if (isActive.current) setResults(mappedLocal);
+        // Absteigend nach Score sortieren (Höchster Score = Platz 1)
+        filteredLocal.sort((a: any, b: any) => b._score - a._score);
+
+        if (isActive.current) setResults(filteredLocal);
         if (isActive.current) setLoading(false);
 
         // Fetch Icons Lazy
-        const iconCandidates = mappedLocal.filter(r => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
+        const iconCandidates = filteredLocal.filter((r: any) => (r.type === 'app' || r.type === 'game' || r.type === 'folder') && r.iconPath);
         for (const item of iconCandidates) {
           (window as any).electronAPI.getFileIcon(item.iconPath!).then((icon: string | null) => {
             if (icon && isActive.current) {
@@ -574,7 +580,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
       } catch {
         if (isActive.current) setLoading(false);
       }
-    }, 300);
+    }, settings.search.searchDelay);
 
     return () => {
       isActive.current = false;
@@ -584,8 +590,10 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
 
   // Auto-scroll to selected
   useEffect(() => {
-    const el = resultsRef.current?.querySelector('.result-item.selected');
-    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    if (interactionMode.current === 'keyboard') {
+      const el = resultsRef.current?.querySelector('.result-item.selected');
+      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    }
   }, [selectedIndex]);
 
   // Focus management
@@ -1005,8 +1013,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
 
               return (
                 <div key={res.id} className={`result-item ${idx === selectedIndex ? 'selected' : ''} ${res.isSubItem ? 'sub-item' : ''}`} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}>
-                  <div className={`result-icon ${res.type}`}>
-                    {res.iconBase64 && res.iconBase64.length > 100 ? (
+                  <div className={`result-icon ${res.swatch ? 'swatch' : res.type}`} style={res.swatch ? { background: res.swatch } : undefined}>
+                    {res.swatch ? null : res.iconBase64 && res.iconBase64.length > 100 ? (
                       <img src={res.iconBase64} alt="" className="result-icon-img" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     ) : getIcon(res.type, res.path)}
                   </div>

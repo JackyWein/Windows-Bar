@@ -100,19 +100,6 @@ const calcCommands: readonly Command[] = [
     aliases: ['/ts'],
   },
   {
-    id: 'ts',
-    trigger: '/ts',
-    description: 'Aktuellen Unix-Zeitstempel anzeigen',
-    category: 'calc',
-    handler() {
-      const now = new Date();
-      return {
-        results: [{ id: 'cmd-now', title: now.toLocaleString('de-DE'), subtitle: `Unix: ${Math.floor(now.getTime() / 1000)}`, type: 'calc' }],
-      };
-    },
-    enabled: true,
-  },
-  {
     id: 'random',
     trigger: '/random',
     description: 'Zufallszahl generieren',
@@ -173,14 +160,48 @@ const calcCommands: readonly Command[] = [
   {
     id: 'color',
     trigger: '/color ',
-    description: 'Farbe anzeigen',
+    description: 'Farbe umwandeln (HEX, RGB, HSL)',
     usage: 'z.B. /color #ff6600  •  /color red',
     category: 'calc',
     handler(args: string) {
-      const color = args.trim().toUpperCase();
+      const input = args.trim();
+      if (!input) {
+        return { results: [{ id: 'cmd-usage', title: 'Farbe umwandeln', subtitle: '/color #ff6600 oder /color red', type: 'calc' }] };
+      }
+      const el = document.createElement('div');
+      el.style.color = '';
+      el.style.color = input;
+      if (el.style.color === '') {
+        return { results: [{ id: 'cmd-err', title: 'Ungueltige Farbe', subtitle: 'z.B. #ff6600, red, rgb(255,102,0)', type: 'system' }] };
+      }
+      document.body.appendChild(el);
+      const rgbStr = getComputedStyle(el).color;
+      document.body.removeChild(el);
+      const m = rgbStr.match(/(\d+),\s*(\d+),\s*(\d+)/);
+      if (!m) {
+        return { results: [{ id: 'cmd-err', title: 'Ungueltige Farbe', subtitle: 'z.B. #ff6600, red', type: 'system' }] };
+      }
+      const r = +m[1], g = +m[2], b = +m[3];
+      const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+      const rn = r / 255, gn = g / 255, bn = b / 255;
+      const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+      let h = 0, s = 0; const l = (max + min) / 2;
+      if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0);
+        else if (max === gn) h = (bn - rn) / d + 2;
+        else h = (rn - gn) / d + 4;
+        h /= 6;
+      }
+      const hsl = `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+      const rgb = `rgb(${r}, ${g}, ${b})`;
       return {
-        results: [{ id: 'cmd-color', title: color, subtitle: 'Farbe \u2022 Enter zum Kopieren', type: 'calc', path: color }],
-        copyToClipboard: color,
+        results: [
+          { id: 'cmd-color-hex', title: hex, subtitle: 'HEX zum Kopieren', type: 'calc', path: hex, copyToClipboard: hex, swatch: hex },
+          { id: 'cmd-color-rgb', title: rgb, subtitle: 'RGB zum Kopieren', type: 'calc', copyToClipboard: rgb, swatch: hex },
+          { id: 'cmd-color-hsl', title: hsl, subtitle: 'HSL zum Kopieren', type: 'calc', copyToClipboard: hsl, swatch: hex },
+        ],
       };
     },
     enabled: true,

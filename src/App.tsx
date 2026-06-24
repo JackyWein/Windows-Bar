@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { AppSettings, ViewMode } from "./types";
 import { defaultSettings } from "./types";
 import { ThemeProvider } from "./components/ThemeProvider";
@@ -12,7 +12,7 @@ import { initExternalCommands } from "./core/commands/external-loader";
 import { initPluginLoader } from "./core/plugins/loader";
 import { builtinThemes, getThemeById } from "./core/settings/themes";
 import type { Theme } from "./types";
-import type { AISettings } from "./core/ai";
+import type { AISettings, ProviderConfig } from "./core/ai";
 import { useConfirm } from "./components/ConfirmDialog";
 import "./index.css";
 
@@ -96,6 +96,8 @@ function applyAllAppearance(settings: AppSettings, theme: Theme): void {
     "--transition-speed",
     settings.appearance.animations ? "0.15s" : "0s",
   );
+  if (settings.appearance.animations) root.classList.remove("no-anim");
+  else root.classList.add("no-anim");
 
   // Scrollbar visibility - apply to scrollable containers
   const showScrollbar = settings.appearance.showScrollbar;
@@ -172,9 +174,15 @@ function App() {
   const [activeNoteId, setActiveNoteId] = useState<number | null>(null);
   const [confirmDialog, confirm] = useConfirm();
 
-  // Resolve current theme
+  // Keep the configured search-window width available to event handlers.
+  const widthRef = useRef(settings.appearance.windowWidth || 750);
+  widthRef.current = settings.appearance.windowWidth || 750;
+
+  // Resolve current theme (built-in + user-created custom themes)
   const theme: Theme =
-    getThemeById(settings.appearance.theme) ?? builtinThemes[0];
+    (settings.appearance.customThemes ?? []).find((t) => t.id === settings.appearance.theme) ??
+    getThemeById(settings.appearance.theme) ??
+    builtinThemes[0];
 
   // SINGLE source of truth: apply all appearance settings whenever anything changes
   useEffect(() => {
@@ -187,7 +195,7 @@ function App() {
       setViewMode('search');
       setActiveNoteId(null);
       try {
-        window.electronAPI.resizeWindow(750, 600);
+        window.electronAPI.resizeWindow(widthRef.current, 600);
       } catch { /* ignore */ }
     };
     window.addEventListener('focus', handleFocus);
@@ -202,10 +210,83 @@ function App() {
     );
   }, []);
 
-  // Persist settings
+  // Persist settings — AI API keys are stored in the encrypted OS keychain
+  // (safeStorage) and redacted from the localStorage copy.
   useEffect(() => {
-    localStorage.setItem("windowsbar_settings", JSON.stringify(settings));
+    const safeProviders: Record<string, ProviderConfig> = {};
+    for (const [id, cfg] of Object.entries(settings.ai.providers)) {
+      if (cfg.apiKey) {
+        window.electronAPI?.storeCredential?.(`ai:${id}`, cfg.apiKey).catch(() => {});
+        safeProviders[id] = { ...cfg, apiKey: undefined };
+      } else {
+        safeProviders[id] = cfg;
+      }
+    }
+    const toSave = { ...settings, ai: { ...settings.ai, providers: safeProviders } };
+    localStorage.setItem("windowsbar_settings", JSON.stringify(toSave));
   }, [settings]);
+
+  // Hydrate AI API keys from the encrypted keychain on startup.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const providers = settings.ai.providers;
+      const ids = Object.keys(providers);
+      if (ids.length === 0) return;
+      let changed = false;
+      const hydrated: Record<string, ProviderConfig> = {};
+      for (const id of ids) {
+        const cfg = providers[id];
+        if (!cfg.apiKey) {
+          try {
+            const k = await window.electronAPI?.getCredential?.(`ai:${id}`);
+            if (k) { hydrated[id] = { ...cfg, apiKey: k }; changed = true; continue; }
+          } catch { /* ignore */ }
+        }
+        hydrated[id] = cfg;
+      }
+      if (changed && !cancelled) {
+        setSettings((prev) => ({ ...prev, ai: { ...prev.ai, providers: hydrated } }));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Register the (customizable) global hotkey.
+  useEffect(() => {
+    const hk = settings.shortcuts?.toggle || "Alt+Space";
+    window.electronAPI?.setGlobalHotkey?.(hk).catch(() => {});
+  }, [settings.shortcuts?.toggle]);
+
+  // Start/stop the real clipboard-history monitor.
+  useEffect(() => {
+    const enabled = settings.features.clipboardHistory && settings.privacy.saveClipboardHistory;
+    window.electronAPI?.startClipboardMonitor?.(!!enabled);
+  }, [settings.features.clipboardHistory, settings.privacy.saveClipboardHistory]);
+
+  // Apply the configured search-window width when it changes.
+  useEffect(() => {
+    if (viewMode === "search") {
+      try { window.electronAPI.resizeWindow(settings.appearance.windowWidth || 750, 600); } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.appearance.windowWidth]);
+
+  // Auto-follow the Windows light/dark preference when enabled.
+  useEffect(() => {
+    if (!settings.appearance.autoTheme) return;
+    const apply = (sys: "light" | "dark") => {
+      const targetId = sys === "dark" ? "dark-default" : "light-default";
+      setSettings((prev) =>
+        prev.appearance.theme === targetId
+          ? prev
+          : { ...prev, appearance: { ...prev.appearance, theme: targetId } },
+      );
+    };
+    window.electronAPI?.getSystemTheme?.().then(apply).catch(() => {});
+    window.electronAPI?.onSystemThemeChange?.(apply);
+  }, [settings.appearance.autoTheme]);
 
   const updateSetting = useCallback(
     (category: keyof AppSettings, key: string, value: unknown) => {
@@ -237,7 +318,7 @@ function App() {
   const backToSearch = () => {
     setViewMode("search");
     try {
-      window.electronAPI.resizeWindow(750, 600);
+      window.electronAPI.resizeWindow(widthRef.current, 600);
     } catch {
       /* ignore */
     }

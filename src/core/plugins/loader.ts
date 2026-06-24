@@ -58,7 +58,7 @@ export function initPluginLoader(
     const wrappedCommand: Command = {
       ...command,
       id: fullId,
-      handler: async (args: string, ctx) => {
+      handler: async (args: string, _ctx) => {
         console.log(`[PluginLoader] Executing command ${fullId} with args:`, args);
         try {
           const result = await window.pluginAPI.invokeCommand(pluginId, command.id, args);

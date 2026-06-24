@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, safeStorage } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell, net, safeStorage, clipboard, nativeTheme } from 'electron';
 
 // Handle squirrel events first
 if (process.argv.length >= 2) {
@@ -12,7 +12,29 @@ if (process.argv.length >= 2) {
 import { join } from 'path';
 import { promises as fs, watch as fsWatch, readFileSync, writeFileSync } from 'fs';
 import type { FSWatcher } from 'fs';
-import { homedir } from 'os';
+import { homedir, networkInterfaces, hostname } from 'os';
+import * as dns from 'dns';
+import * as https from 'https';
+
+// ========================
+// POWERSHELL HELPER — runs scripts via -EncodedCommand (UTF-16LE Base64).
+// This eliminates all quoting/escaping issues and command-injection risks
+// because the payload is never parsed by a shell.
+// ========================
+function runPowerShell(script: string, timeoutMs = 15000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024, windowsHide: true },
+      (err, stdout) => {
+        if (err) reject(err);
+        else resolve(stdout.toString());
+      },
+    );
+  });
+}
 
 process.on('uncaughtException', (error) => {
   console.error('[Uncaught Exception]', error);
@@ -22,7 +44,7 @@ process.on('unhandledRejection', (error) => {
   console.error('[Unhandled Rejection]', error);
 });
 
-import { execSync, spawn, ChildProcess, exec } from 'child_process';
+import { execSync, spawn, ChildProcess, exec, execFile } from 'child_process';
 import { tryGetIconWithRetry, resolveShortcutIcon } from './utils/icons';
 import { loadExternalCommands } from './utils/external-commands';
 import { loadAllPlugins, registerPluginIPC } from './utils/plugins';
@@ -552,16 +574,30 @@ async function crawl(dir: string, defaultType: 'app' | 'file', priority: number,
 // ========================
 // Search Logic (Improved Relevance)
 // ========================
+// Fuzzy subsequence match: are all chars of `q` present in `t` in order? (e.g. "vsc" → "visual studio code")
+function fuzzySubsequence(q: string, t: string): boolean {
+  let qi = 0;
+  for (let i = 0; i < t.length && qi < q.length; i++) {
+    if (t[i] === q[qi]) qi++;
+  }
+  return qi === q.length;
+}
+
 function searchIndex(query: string): IndexItem[] {
   const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
   const scored: { item: IndexItem, score: number }[] = [];
   const home = homedir().toLowerCase();
+  const singleTerm = terms.length === 1 ? terms[0] : null;
 
   for (const item of indexItems) {
     const titleLower = item.title.toLowerCase();
-    if (!terms.every(t => titleLower.includes(t))) continue;
+    const isSubstring = terms.every(t => titleLower.includes(t));
+    // Allow fuzzy subsequence for single-word queries (e.g. "vsc" → "Visual Studio Code")
+    const isFuzzy = !isSubstring && singleTerm !== null && singleTerm.length >= 2 && fuzzySubsequence(singleTerm, titleLower);
+    if (!isSubstring && !isFuzzy) continue;
 
     let score = 0;
+    if (isFuzzy) score -= 120; // fuzzy matches rank below real substring matches
     const pathLower = item.path.toLowerCase();
 
     // 1. Exact Name Boost (Strongest)
@@ -610,9 +646,11 @@ function searchIndex(query: string): IndexItem[] {
 // ========================
 
 // Configure auto-updater
-autoUpdater.autoDownload = true;        // Automatically download updates when found
-autoUpdater.autoInstallOnAppQuit = true; // Install on app quit (no user interaction)
-autoUpdater.allowPrerelease = false;     // Only stable releases
+// NOTE: We use a single, manual GitHub-API update flow (checkForUpdates/downloadAndInstall below).
+// electron-updater's auto-download is disabled so the two paths can never race / double-download.
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.allowPrerelease = false;
 
 let updateReady = false;
 let installOnReady = false;
@@ -637,7 +675,7 @@ async function checkForUpdates() {
   // Check if we already have an installer in temp from previous run
   const tempDir = app.getPath('temp');
   try {
-    const files = await fs.promises.readdir(tempDir);
+    const files = await fs.readdir(tempDir);
     const existingInstaller = files.find(f => f.includes('WindowsBar') && f.endsWith('.exe'));
     if (existingInstaller) {
       console.log('[WindowsBar] Found existing installer in temp');
@@ -692,11 +730,7 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', (info) => {
   console.log('[WindowsBar] AU: Update available:', info.version);
-  // Auto-start download like electron-updater docs say
-  if (!updateReady && currentDownloadProgress === null) {
-    console.log('[WindowsBar] AU: Auto-starting download...');
-    autoUpdater.downloadUpdate().catch(e => console.error('[WindowsBar] AU download error:', e));
-  }
+  // Download is handled exclusively by the manual GitHub flow (downloadAndInstall).
 });
 
 autoUpdater.on('update-not-available', () => {
@@ -794,6 +828,29 @@ function toggleWindow() {
   }
 }
 
+// Customizable global hotkey — register/unregister dynamically.
+let currentHotkey = 'Alt+Space';
+function registerToggleHotkey(accelerator: string): { success: boolean; error?: string } {
+  const accel = String(accelerator || '').trim();
+  if (!accel) return { success: false, error: 'Leerer Hotkey' };
+  try {
+    if (currentHotkey) {
+      try { globalShortcut.unregister(currentHotkey); } catch { /* ignore */ }
+    }
+    const ok = globalShortcut.register(accel, toggleWindow);
+    if (ok) {
+      currentHotkey = accel;
+      return { success: true };
+    }
+    // Re-register the previous one if the new accelerator failed (e.g. already in use)
+    try { globalShortcut.register(currentHotkey, toggleWindow); } catch { /* ignore */ }
+    return { success: false, error: 'Hotkey konnte nicht registriert werden (evtl. schon belegt)' };
+  } catch (e) {
+    try { globalShortcut.register(currentHotkey, toggleWindow); } catch { /* ignore */ }
+    return { success: false, error: String(e) };
+  }
+}
+
 app.whenReady().then(async () => {
   createWindow();
 
@@ -823,8 +880,8 @@ app.whenReady().then(async () => {
     startWatchers();
     startBackgroundRefresh();
   });
-  const success = globalShortcut.register('Alt+Space', toggleWindow);
-  console.log(success ? '[WindowsBar] Alt+Space registered' : '[WindowsBar] Shortcut FAILED');
+  const hk = registerToggleHotkey('Alt+Space');
+  console.log(hk.success ? '[WindowsBar] Global hotkey registered (Alt+Space)' : `[WindowsBar] Hotkey FAILED: ${hk.error}`);
   app.setLoginItemSettings({ openAtLogin: true, path: app.getPath('exe') });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
@@ -1074,7 +1131,8 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
         iconPath = fullPath;
       } else if (type === 'app') {
         if (name.toLowerCase().endsWith('.lnk')) {
-          iconPath = await resolveShortcutIcon(fullPath) || fullPath;
+          // Do not resolve .lnk here, so app.getFileIcon can fetch custom shortcut icons
+          iconPath = fullPath;
         } else if (name.toLowerCase().endsWith('.url')) {
           try {
             // Asynchrones Lesen blockiert die UI nicht!
@@ -1189,19 +1247,15 @@ ipcMain.handle('get-system-info', async () => {
     const usedMem = totalMem - freeMem;
     const loadAvg = os.loadavg();
 
-    // Get disk info using wmic
+    // Get disk info via Node's native statfs (no deprecated wmic, non-blocking).
     let diskInfo = { total: 0, free: 0 };
     try {
-      const diskOutput = execSync('wmic logicaldisk get size,freespace /format:csv', { encoding: 'utf-8' });
-      const lines = diskOutput.trim().split('\n').filter(l => l.trim());
-      if (lines.length > 1) {
-        const parts = lines[1].split(',');
-        if (parts.length >= 2) {
-          diskInfo.free = parseInt(parts[0]) || 0;
-          diskInfo.total = parseInt(parts[1]) || 0;
-        }
-      }
-    } catch (e) { }
+      const sysDrive = (process.env.SystemDrive || 'C:') + '\\';
+      // fs.statfs is available on Node 18.15+/Electron 41
+      const stat = await (fs as unknown as { statfs: (p: string) => Promise<{ bsize: number; blocks: number; bavail: number }> }).statfs(sysDrive);
+      diskInfo.total = stat.blocks * stat.bsize;
+      diskInfo.free = stat.bavail * stat.bsize;
+    } catch (e) { /* statfs unavailable */ }
 
     return {
       cpu: {
@@ -1230,46 +1284,81 @@ ipcMain.handle('get-system-info', async () => {
   }
 });
 
-// Sleep Display (Turn off monitor)
+// Sleep Display (Turn off monitor) — correct SC_MONITORPOWER (0xF170) via WM_SYSCOMMAND.
 ipcMain.on('sleep-display', () => {
+  const script = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class MonitorCtl {
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  public static void Off() { SendMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)2); }
+}
+"@
+[MonitorCtl]::Off()
+`;
+  runPowerShell(script).catch(e => console.error('sleep-display error:', e));
+});
+
+// ========================
+// AUDIO CONTROL — real Core Audio (WASAPI) via PowerShell, no external tools.
+// ========================
+const AUDIO_CSHARP = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+  int f(); int g(); int h(); int i();
+  int SetMasterVolumeLevelScalar(float fLevel, Guid pguidEventContext);
+  int j();
+  int GetMasterVolumeLevelScalar(out float pfLevel);
+  int k(); int l(); int m(); int n();
+  int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, Guid pguidEventContext);
+  int GetMute(out bool pbMute);
+}
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice { int Activate(ref Guid id, int clsCtx, IntPtr p, [MarshalAs(UnmanagedType.IUnknown)] out object o); }
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator { int f(); int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ep); }
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumeratorComObject { }
+public class AudioCtl {
+  static IAudioEndpointVolume Vol() {
+    var en = new MMDeviceEnumeratorComObject() as IMMDeviceEnumerator;
+    IMMDevice dev; Marshal.ThrowExceptionForHR(en.GetDefaultAudioEndpoint(0, 1, out dev));
+    Guid iid = typeof(IAudioEndpointVolume).GUID; object o;
+    Marshal.ThrowExceptionForHR(dev.Activate(ref iid, 1, IntPtr.Zero, out o));
+    return (IAudioEndpointVolume)o;
+  }
+  public static void SetVol(float l){ Vol().SetMasterVolumeLevelScalar(l, Guid.Empty); }
+  public static void SetMute(bool m){ Vol().SetMute(m, Guid.Empty); }
+  public static float GetVol(){ float v; Vol().GetMasterVolumeLevelScalar(out v); return v; }
+  public static bool GetMute(){ bool m; Vol().GetMute(out m); return m; }
+}
+"@
+`;
+
+ipcMain.handle('set-volume-absolute', async (_event, level: number) => {
+  const safe = Math.max(0, Math.min(100, Number(level) || 0)) / 100;
   try {
-    exec('powershell -command "(Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'{SCROLLLOCK}{SCROLLLOCK}\'))"', (error) => {
-      if (error) console.error('Sleep error:', error);
-    });
-    // Alternative: Use SendMessage to turn off monitor
-    setTimeout(() => {
-      exec('powershell -command "Add-Type -TypeDefinition \\"using System; using System.Runtime.InteropServices; public class PM { [DllImport(\\"user32.dll\\\")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam); }\\"; [PM]::SendMessage(0xFFFF, 0x0112, 0, 2)"', (e) => {
-        if (e) console.error('Monitor off error:', e);
-      });
-    }, 100);
+    await runPowerShell(`${AUDIO_CSHARP}\n[AudioCtl]::SetVol([float]${safe})`);
+    return { success: true };
   } catch (e) {
-    console.error('sleep-display error:', e);
+    console.error('set-volume-absolute error:', e);
+    return { success: false };
   }
 });
 
-// Volume Control
+// Legacy relative volume (kept for backward compat) — now routes to absolute via current+delta is impractical,
+// so we just toggle mute is handled separately. set-volume sets absolute level.
 ipcMain.on('set-volume', (_event, level: number) => {
-  try {
-    // level: 0-100
-    const safeLevel = Math.max(0, Math.min(100, level));
-    exec(`powershell -command "$obj = New-Object -ComObject WScript.Shell; $obj.SendKeys([char]${safeLevel})"`, (error) => {
-      if (error) console.error('Volume error:', error);
-    });
-    // Alternative using nircmd or simple approach
-    exec(`powershell -command "(New-Object -ComObject WScript.Shell).SendKeys([char]173)"`, () => { }); // Mute toggle workaround
-  } catch (e) {
-    console.error('set-volume error:', e);
-  }
+  const safe = Math.max(0, Math.min(100, Number(level) || 0)) / 100;
+  runPowerShell(`${AUDIO_CSHARP}\n[AudioCtl]::SetVol([float]${safe})`).catch(e => console.error('set-volume error:', e));
 });
 
 ipcMain.on('toggle-mute', () => {
-  try {
-    exec('powershell -command "(New-Object -ComObject WScript.Shell).SendKeys([char]173)"', (error) => {
-      if (error) console.error('Mute error:', error);
-    });
-  } catch (e) {
-    console.error('toggle-mute error:', e);
-  }
+  runPowerShell(`${AUDIO_CSHARP}\n[AudioCtl]::SetMute(-not [AudioCtl]::GetMute())`)
+    .catch(e => console.error('toggle-mute error:', e));
 });
 
 // Empty Trash
@@ -1356,24 +1445,259 @@ ipcMain.handle('list-processes', async () => {
   }
 });
 
-// Clipboard read/write for frontend
+// Clipboard read/write for frontend — Electron native clipboard (safe, fast, Unicode-correct).
 ipcMain.handle('read-clipboard', async () => {
   try {
-    const text = execSync('powershell -command "Get-Clipboard"', { encoding: 'utf-8' });
-    return text.trim();
-  } catch (e) {
+    return clipboard.readText();
+  } catch {
     return '';
   }
 });
 
 ipcMain.on('write-clipboard', (_event, text: string) => {
   try {
-    // Escape quotes and special chars for PowerShell
-    const escaped = text.replace(/'/g, "''").replace(/\n/g, '`n');
-    exec(`powershell -command "Set-Clipboard -Value '${escaped}'"`);
+    clipboard.writeText(String(text ?? ''));
   } catch (e) {
     console.error('write-clipboard error:', e);
   }
+});
+
+// ========================
+// RUN PROGRAM & POWER ACTIONS
+// ========================
+ipcMain.handle('run-program', async (_event, program: string) => {
+  const p = String(program || '').trim();
+  if (!p) return { success: false, error: 'Kein Programm angegeben' };
+  try {
+    // Protocol URIs (steam://, ms-settings:, https://) → open externally
+    if (/^[a-z][a-z0-9+.-]*:(\/\/|[^/])/i.test(p)) {
+      await shell.openExternal(p);
+    } else {
+      const child = spawn(p, [], { shell: true, detached: true, stdio: 'ignore', windowsHide: false });
+      child.unref();
+    }
+    mainWindow?.hide();
+    return { success: true };
+  } catch (e) {
+    console.error('run-program error:', e);
+    return { success: false, error: String(e) };
+  }
+});
+
+ipcMain.on('power-action', (_event, action: string) => {
+  try {
+    switch (action) {
+      case 'lock': execFile('rundll32.exe', ['user32.dll,LockWorkStation']); break;
+      case 'shutdown': execFile('shutdown', ['/s', '/t', '0']); break;
+      case 'restart': execFile('shutdown', ['/r', '/t', '0']); break;
+      case 'logoff': execFile('shutdown', ['/l']); break;
+    }
+  } catch (e) {
+    console.error('power-action error:', e);
+  }
+});
+
+// ========================
+// NETWORK & SYSTEM TOOLS
+// ========================
+ipcMain.handle('get-local-ip', async () => {
+  const ifaces = networkInterfaces();
+  const ipv4: string[] = [];
+  const ipv6: string[] = [];
+  for (const name of Object.keys(ifaces)) {
+    for (const ni of ifaces[name] || []) {
+      if (ni.internal) continue;
+      if (ni.family === 'IPv4') ipv4.push(ni.address);
+      else if (ni.family === 'IPv6' && !ni.address.startsWith('fe80')) ipv6.push(ni.address);
+    }
+  }
+  return { ipv4, ipv6, hostname: hostname() };
+});
+
+ipcMain.handle('get-network-info', async () => {
+  try {
+    const out = await runPowerShell('netsh wlan show interfaces');
+    const ssid = out.match(/^\s*SSID\s*:\s*(.+)$/m)?.[1]?.trim();
+    const signal = out.match(/(?:Signal|Signalst)[^:]*:\s*(.+)$/m)?.[1]?.trim();
+    const type = out.match(/(?:Radio type|Funktyp)\s*:\s*(.+)$/m)?.[1]?.trim();
+    let profiles: string[] = [];
+    try {
+      const pout = await runPowerShell('netsh wlan show profiles');
+      profiles = Array.from(pout.matchAll(/(?:All User Profile|Alle Benutzerprofile?)\s*:\s*(.+)/g)).map(m => m[1].trim());
+    } catch { /* ignore */ }
+    return { ssid, signal, type, profiles };
+  } catch {
+    return { profiles: [] };
+  }
+});
+
+ipcMain.handle('get-battery', async () => {
+  try {
+    const out = await runPowerShell('(Get-CimInstance Win32_Battery | Select-Object -First 1 EstimatedChargeRemaining,BatteryStatus | ConvertTo-Json -Compress)');
+    const trimmed = out.trim();
+    if (!trimmed) return null;
+    const data = JSON.parse(trimmed);
+    const percent = Number(data.EstimatedChargeRemaining);
+    if (isNaN(percent)) return null;
+    return { percent, charging: Number(data.BatteryStatus) !== 1 };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('ping-host', async (_event, host: string) => {
+  const safe = String(host || '').replace(/[^a-zA-Z0-9.\-:]/g, '').slice(0, 100);
+  if (!safe) return { host: safe, output: 'Ungültiger Host' };
+  return new Promise((resolve) => {
+    execFile('ping', ['-n', '4', safe], { timeout: 12000, windowsHide: true }, (_err, stdout) => {
+      const out = (stdout || '').toString();
+      const avg = out.match(/(?:Average|Mittelwert)\s*=\s*(\d+\s*ms)/)?.[1];
+      const loss = out.match(/\((\d+)%\s*(?:loss|Verlust)\)/)?.[1];
+      resolve({ host: safe, avg, loss: loss ? loss + '%' : undefined, output: out.trim() || 'Keine Antwort' });
+    });
+  });
+});
+
+ipcMain.handle('dns-lookup', async (_event, host: string) => {
+  const safe = String(host || '').trim();
+  if (!safe) return { host: safe, addresses: [] };
+  try {
+    const res = await dns.promises.lookup(safe, { all: true });
+    return { host: safe, addresses: res.map(r => r.address) };
+  } catch {
+    return { host: safe, addresses: [] };
+  }
+});
+
+ipcMain.handle('run-speedtest', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  let pingMs = 0;
+  try {
+    const t0 = Date.now();
+    await new Promise<void>((resolve, reject) => {
+      https.get('https://speed.cloudflare.com/__down?bytes=0', res => { res.resume(); res.on('end', () => resolve()); }).on('error', reject);
+    });
+    pingMs = Date.now() - t0;
+  } catch { /* ignore */ }
+
+  const bytesTarget = 25 * 1024 * 1024;
+  let downloadMbps = 0;
+  try {
+    downloadMbps = await new Promise<number>((resolve, reject) => {
+      const start = Date.now();
+      let received = 0;
+      https.get(`https://speed.cloudflare.com/__down?bytes=${bytesTarget}`, res => {
+        res.on('data', chunk => {
+          received += chunk.length;
+          const elapsed = (Date.now() - start) / 1000;
+          if (elapsed > 0 && win && !win.isDestroyed()) {
+            win.webContents.send('speedtest-progress', {
+              phase: 'download',
+              mbps: (received * 8) / elapsed / 1e6,
+              progress: Math.min(100, (received / bytesTarget) * 100),
+            });
+          }
+        });
+        res.on('end', () => {
+          const elapsed = (Date.now() - start) / 1000;
+          resolve(elapsed > 0 ? (received * 8) / elapsed / 1e6 : 0);
+        });
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+  } catch { /* ignore */ }
+
+  return { downloadMbps: Math.round(downloadMbps * 10) / 10, pingMs };
+});
+
+// ========================
+// GLOBAL HOTKEY (customizable) & WINDOW SIZING
+// ========================
+ipcMain.handle('set-global-hotkey', async (_event, accelerator: string) => {
+  return registerToggleHotkey(accelerator);
+});
+
+ipcMain.on('set-window-width', (_event, width: number) => {
+  if (mainWindow) {
+    const [, h] = mainWindow.getSize();
+    const w = Math.max(420, Math.min(1400, Math.round(Number(width) || 750)));
+    mainWindow.setSize(w, h);
+    mainWindow.center();
+  }
+});
+
+// ========================
+// CLIPBOARD HISTORY MONITOR
+// ========================
+interface ClipEntry { type: 'text' | 'image'; value: string; ts: number; }
+let clipHistory: ClipEntry[] = [];
+let clipMonitorTimer: NodeJS.Timeout | null = null;
+let lastClipText = '';
+let lastClipImg = '';
+const CLIP_MAX = 50;
+const clipHistoryFile = () => join(app.getPath('userData'), 'clipboard-history.json');
+
+function loadClipHistory(): void {
+  try { clipHistory = JSON.parse(readFileSync(clipHistoryFile(), 'utf-8')); } catch { clipHistory = []; }
+}
+function saveClipHistory(): void {
+  try { writeFileSync(clipHistoryFile(), JSON.stringify(clipHistory.slice(0, CLIP_MAX)), 'utf-8'); } catch { /* ignore */ }
+}
+function pollClipboard(): void {
+  try {
+    const text = clipboard.readText();
+    if (text && text !== lastClipText) {
+      lastClipText = text;
+      clipHistory = [{ type: 'text' as const, value: text, ts: Date.now() }, ...clipHistory.filter(e => !(e.type === 'text' && e.value === text))].slice(0, CLIP_MAX);
+      saveClipHistory();
+      mainWindow?.webContents.send('clipboard-changed', clipHistory);
+      return;
+    }
+    const img = clipboard.readImage();
+    if (img && !img.isEmpty()) {
+      const dataUrl = img.toDataURL();
+      if (dataUrl !== lastClipImg && dataUrl.length < 3_000_000) {
+        lastClipImg = dataUrl;
+        clipHistory = [{ type: 'image' as const, value: dataUrl, ts: Date.now() }, ...clipHistory.filter(e => e.value !== dataUrl)].slice(0, CLIP_MAX);
+        saveClipHistory();
+        mainWindow?.webContents.send('clipboard-changed', clipHistory);
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+ipcMain.on('clipboard-monitor', (_event, enabled: boolean) => {
+  if (enabled) {
+    if (!clipHistory.length) loadClipHistory();
+    lastClipText = clipboard.readText();
+    if (!clipMonitorTimer) clipMonitorTimer = setInterval(pollClipboard, 1000);
+  } else if (clipMonitorTimer) {
+    clearInterval(clipMonitorTimer);
+    clipMonitorTimer = null;
+  }
+});
+ipcMain.handle('clipboard-history-get', async () => { if (!clipHistory.length) loadClipHistory(); return clipHistory; });
+ipcMain.handle('clipboard-history-clear', async () => {
+  clipHistory = [];
+  saveClipHistory();
+  mainWindow?.webContents.send('clipboard-changed', clipHistory);
+  return true;
+});
+ipcMain.handle('clipboard-history-remove', async (_event, index: number) => {
+  if (index >= 0 && index < clipHistory.length) {
+    clipHistory.splice(index, 1);
+    saveClipHistory();
+    mainWindow?.webContents.send('clipboard-changed', clipHistory);
+  }
+  return true;
+});
+
+// ========================
+// SYSTEM THEME (light/dark) for autoTheme
+// ========================
+ipcMain.handle('get-system-theme', async () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
+nativeTheme.on('updated', () => {
+  mainWindow?.webContents.send('system-theme-changed', nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
 });
 
 // ========================
@@ -1787,7 +2111,7 @@ ipcMain.on('install-update', async () => {
     // Fallback: If we don't have the path exactly, look in temp dir
     const tempDir = app.getPath('temp');
     try {
-      const files = await fs.promises.readdir(tempDir);
+      const files = await fs.readdir(tempDir);
       console.log('[WindowsBar] Files in temp:', files.filter(f => f.includes('WindowsBar')));
       
       const installer = files.find(f => f.includes('WindowsBar') && f.endsWith('.exe'));
@@ -1826,7 +2150,9 @@ ipcMain.on('update-system-settings', (_event, settings: { autoStart?: boolean; a
   // Update auto-start
   if (settings.autoStart !== undefined) {
     appSettings.autoStart = settings.autoStart;
-    app.setLoginItemSettings({ openAtLogin: settings.autoStart, path: app.getPath('exe') });
+    if (!isDev) {
+      app.setLoginItemSettings({ openAtLogin: settings.autoStart, path: app.getPath('exe') });
+    }
     console.log(`[WindowsBar] Auto-start ${settings.autoStart ? 'enabled' : 'disabled'}`);
   }
 

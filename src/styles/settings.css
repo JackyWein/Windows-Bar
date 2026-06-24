@@ -18,6 +18,34 @@
   gap: 4px;
   background: rgba(0, 0, 0, 0.1);
   border-bottom-left-radius: var(--radius);
+  overflow-y: auto;
+}
+
+.settings-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-dim);
+}
+
+.settings-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-xs, 12px);
+}
+
+.settings-search input::placeholder {
+  color: var(--text-dim);
 }
 
 .settings-nav-item {

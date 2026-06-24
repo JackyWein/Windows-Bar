@@ -34,6 +34,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readClipboard: () => ipcRenderer.invoke('read-clipboard'),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
 
+  // Power & run
+  runProgram: (program: string) => ipcRenderer.invoke('run-program', program),
+  lockPC: () => ipcRenderer.send('power-action', 'lock'),
+  shutdownPC: () => ipcRenderer.send('power-action', 'shutdown'),
+  restartPC: () => ipcRenderer.send('power-action', 'restart'),
+  signOut: () => ipcRenderer.send('power-action', 'logoff'),
+  setVolumeAbsolute: (level: number) => ipcRenderer.invoke('set-volume-absolute', level),
+
+  // Network & system tools
+  getLocalIp: () => ipcRenderer.invoke('get-local-ip'),
+  getNetworkInfo: () => ipcRenderer.invoke('get-network-info'),
+  getBattery: () => ipcRenderer.invoke('get-battery'),
+  pingHost: (host: string) => ipcRenderer.invoke('ping-host', host),
+  dnsLookup: (host: string) => ipcRenderer.invoke('dns-lookup', host),
+  runSpeedtest: () => ipcRenderer.invoke('run-speedtest'),
+  onSpeedtestProgress: (callback: (data: { phase: string; mbps: number; progress: number }) => void) => {
+    ipcRenderer.on('speedtest-progress', (_event, data) => callback(data));
+  },
+  removeSpeedtestListeners: () => ipcRenderer.removeAllListeners('speedtest-progress'),
+
+  // Global hotkey (customizable)
+  setGlobalHotkey: (accelerator: string) => ipcRenderer.invoke('set-global-hotkey', accelerator),
+
+  // Window sizing
+  setWindowWidth: (width: number) => ipcRenderer.send('set-window-width', width),
+
+  // Clipboard history monitor
+  startClipboardMonitor: (enabled: boolean) => ipcRenderer.send('clipboard-monitor', enabled),
+  getClipboardHistory: () => ipcRenderer.invoke('clipboard-history-get'),
+  clearClipboardHistory: () => ipcRenderer.invoke('clipboard-history-clear'),
+  removeClipboardHistoryItem: (index: number) => ipcRenderer.invoke('clipboard-history-remove', index),
+  onClipboardChange: (callback: (history: { type: string; value: string; ts: number }[]) => void) => {
+    ipcRenderer.on('clipboard-changed', (_event, history) => callback(history));
+  },
+
+  // System theme (light/dark) for autoTheme
+  getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
+  onSystemThemeChange: (callback: (theme: 'light' | 'dark') => void) => {
+    ipcRenderer.on('system-theme-changed', (_event, theme) => callback(theme));
+  },
+
   // AI Chat
   aiChat: (request: unknown) => ipcRenderer.invoke('ai:chat', request),
   aiAbort: () => ipcRenderer.send('ai:abort'),

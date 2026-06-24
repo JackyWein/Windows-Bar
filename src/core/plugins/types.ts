@@ -2,7 +2,7 @@
 // PLUGIN SYSTEM TYPES
 // ========================
 
-import type { SearchResult, ViewMode, AppSettings, Command, CommandContext, CommandResult } from '../../types';
+import type { SearchResult, ViewMode, AppSettings, Command, CommandResult } from '../../types';
 
 /**
  * Plugin Manifest - describes the plugin
@@ -169,7 +169,8 @@ export interface PluginDefinition {
 export interface PluginAPI {
   // Get plugin info
   getPlugin: (id: string) => Plugin | null;
-  
+  getPluginSettings: (id: string) => Record<string, unknown>;
+
   // Register commands
   registerCommand: (command: PluginCommand) => void;
   unregisterCommand: (id: string) => void;

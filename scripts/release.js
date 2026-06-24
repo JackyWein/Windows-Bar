@@ -175,7 +175,8 @@ try {
 
     console.log(`📤 Pushe zu GitHub...`);
     execSync('git push origin main', { stdio: 'inherit' });
-    execSync(`git push origin v${newVersion} --force`, { stdio: 'inherit' });
+    // Push the tag WITHOUT --force (force-pushing release tags destroys history / invalidates builds).
+    execSync(`git push origin v${newVersion}`, { stdio: 'inherit' });
 } catch (e) {
     console.log('⚠️  Git Operationen teilweise fehlgeschlagen oder keine Änderungen.');
 }

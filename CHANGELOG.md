@@ -1,6 +1,46 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.1.0] - 2026-06-24
+
+**✨ Großes Overhaul-Update: Fixes, neue Werkzeuge, Design & Anpassbarkeit**
+
+### 🛠️ Reparierte Funktionen (vorher kaputt)
+* **`/lock`, `/shutdown`, `/restart` + neu `/logoff`:** Nutzten ein totes `cmd://`-Protokoll und taten gar nichts. Laufen jetzt über echte Windows-Befehle.
+* **`/run`:** Erzeugte einen ungültigen Datei-Pfad und brach ab. Startet Programme jetzt zuverlässig (z.B. `/run notepad`).
+* **Bildschirm ausschalten (`/sleep`):** Falscher Tastentrick → ersetzt durch den korrekten `SC_MONITORPOWER`-Befehl. Schaltet den Monitor jetzt wirklich aus.
+* **Stummschalten (`/mute`) & Lautstärke (neu `/volume 0–100`):** Sendeten nur zufällige Zeichen. Nutzen jetzt die echte Windows-Audio-API (WASAPI).
+* **Zwischenablage-Verlauf:** `/history` zeigte nur, was per `/cp` kopiert wurde. Es gibt jetzt einen echten Zwischenablage-Monitor (Text **und** Bilder) mit Zeitstempeln.
+* **System-Info (`/sys`):** Disk-Anzeige nutzte das auf Windows 11 entfernte `wmic`. Läuft jetzt über die native Node-API (kein Einfrieren mehr).
+* **Suche:** Findet jetzt auch über Anfangsbuchstaben (Fuzzy), z.B. `vsc` → „Visual Studio Code".
+
+### 🚀 Neue Werkzeuge & Befehle
+* **Netzwerk:** `/ip` (öffentliche **+** lokale IP), `/speedtest` (Download & Ping live), `/ping <host>`, `/dns <host>`, `/wifi` (WLAN-Status & gespeicherte Netze).
+* **Akku:** `/battery` zeigt Ladestand & Ladezustand.
+* **Umrechnen:** `/units 10 km mi` (Länge, Gewicht, Temperatur, Geschwindigkeit, Daten) und `/currency 100 usd eur` (Live-Wechselkurse).
+* **Emoji-Suche:** `/emoji feuer` — durchsuchbarer Emoji-Picker, kein Internet nötig.
+* **Farb-Werkzeug:** `/color #ff6600` zeigt jetzt eine Farbvorschau (Swatch) + HEX/RGB/HSL zum Kopieren.
+* **Mehr Hashes:** `/md5`, `/sha1`, `/sha512` (zusätzlich zum bestehenden `/hash` = SHA-256). Base64 (`/enc`, `/dec`) ist jetzt UTF-8-/Umlaut-sicher.
+
+### 🎨 Design
+* Neues **Design-Token-System** (einheitliche Abstände, Typografie, Radien, Animationen) für ein durchgängig stimmiges, hochwertiges Bild.
+* Neues auffälliges **Signature-Theme „Aurora ✦"** (tiefes Violett mit Magenta-Glow).
+* **Light-Mode überarbeitet** — kräftigere Kontraste, weniger blass.
+* Einheitliche Hover-/Fokus-/Deaktiviert-Zustände, sauberere Buttons & Icons, `prefers-reduced-motion` wird respektiert.
+
+### ⚙️ Anpassbarkeit
+* **Anpassbarer globaler Hotkey** statt fest Alt+Space — frei belegbar im neuen Tab „Tastenkürzel".
+* **Theme-Builder:** eigene Themes mit Farbwählern & Live-Vorschau erstellen, exportieren und löschen.
+* **System folgen (Hell/Dunkel):** Theme passt sich automatisch an die Windows-Einstellung an.
+* **Fensterbreite** ist jetzt einstellbar; **Einstellungs-Suche** im Seitenmenü.
+
+### 🔒 Sicherheit & Stabilität
+* **KI-API-Schlüssel** werden jetzt verschlüsselt im OS-Schlüsselbund (safeStorage) gespeichert statt im Klartext.
+* **Command-Injection-Lücke** beim Kopieren in die Zwischenablage geschlossen (native Electron-API statt PowerShell).
+* **Plugin-Sicherheit:** Plugin-IDs werden gegen Path-Traversal validiert.
+* **Auto-Updater entschärft:** doppelter Download-Pfad deaktiviert; `release.js` macht keinen gefährlichen `git push --force` mehr auf Tags.
+* Aktualisierte KI-Modell-ID (`claude-opus-4-8`); vorbestehende TypeScript-Fehler im Projekt bereinigt.
+
 ## [1.0.15] - 2026-04-09
 
 **🚀 Auto-Update Fixes & Auto-Restart**

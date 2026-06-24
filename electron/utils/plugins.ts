@@ -3,7 +3,7 @@ import { app, ipcMain, BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import Module from 'module';
-import { executeInSandbox, validateManifest, type SandboxContext, type SandboxResult } from './sandbox';
+import { executeInSandbox, validateManifest, type SandboxResult } from './sandbox';
 
 // Hook into Node's module resolution to allow plugins in APPDATA to access the host app's node_modules
 const originalResolveFilename = (Module as any)._resolveFilename;
@@ -49,8 +49,14 @@ export async function ensurePluginsDir(): Promise<string> {
   return pluginsDir;
 }
 
+// Only allow safe plugin IDs (prevents path traversal out of the plugins dir).
+function isValidPluginId(id: unknown): id is string {
+  return typeof id === 'string' && /^[a-zA-Z0-9._-]+$/.test(id) && !id.includes('..');
+}
+
 // Get plugin directory
 export function getPluginDir(pluginId: string): string {
+  if (!isValidPluginId(pluginId)) throw new Error(`Ungültige Plugin-ID: ${pluginId}`);
   return join(pluginsDir, pluginId);
 }
 
@@ -111,6 +117,9 @@ export async function installPlugin(source: string): Promise<PluginInfo | null> 
     }
 
     const pluginId = manifest.id;
+    if (!isValidPluginId(pluginId)) {
+      throw new Error('Ungültige Plugin-ID (erlaubt: a-z, A-Z, 0-9, ._-)');
+    }
     const destDir = getPluginDir(pluginId);
 
     await fs.cp(source, destDir, { recursive: true });

@@ -1,6 +1,7 @@
 /* Windows-Bar — Main Stylesheet
    Imports all CSS modules in dependency order */
 
+@import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/search.css";
 @import "./styles/settings.css";

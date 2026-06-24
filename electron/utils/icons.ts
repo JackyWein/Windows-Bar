@@ -71,15 +71,6 @@ export async function tryGetIconWithRetry(targetPath: string, retries = 2): Prom
         if (directIcon) return directIcon;
     }
 
-    // Resolve .lnk files to their actual target
-    if (targetPath.toLowerCase().endsWith('.lnk')) {
-        const resolved = await resolveShortcutIcon(targetPath);
-        if (resolved && resolved !== targetPath) {
-            // Recursively try with resolved path
-            return tryGetIconWithRetry(resolved, retries);
-        }
-    }
-
     // For .url files, try to get icon from the file itself
     if (targetPath.toLowerCase().endsWith('.url')) {
         try {
@@ -108,7 +99,7 @@ export async function tryGetIconWithRetry(targetPath: string, retries = 2): Prom
         return null;
     }
 
-    // Electron's getFileIcon with retries
+    // Electron's getFileIcon with retries (will fetch custom shortcut icons for .lnk)
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             const img = await app.getFileIcon(targetPath, { size: 'large' });
@@ -122,6 +113,15 @@ export async function tryGetIconWithRetry(targetPath: string, retries = 2): Prom
             } catch {
                 if (attempt < retries) await new Promise(r => setTimeout(r, 50));
             }
+        }
+    }
+
+    // Fallback: Resolve .lnk files to their actual target if getFileIcon completely failed
+    if (targetPath.toLowerCase().endsWith('.lnk')) {
+        const resolved = await resolveShortcutIcon(targetPath);
+        if (resolved && resolved !== targetPath) {
+            // Recursively try with resolved path
+            return tryGetIconWithRetry(resolved, retries);
         }
     }
 

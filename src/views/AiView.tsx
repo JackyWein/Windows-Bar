@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AISettings, ChatSession, ChatMessage, AIRequest } from '../core/ai';
+import type { AISettings, ChatSession, ChatMessage } from '../core/ai';
 import { ChatEngine } from '../core/ai/chat';
 import { sessionStore } from '../core/ai/sessions';
 import { ChatToolbar } from './ai/ChatToolbar';
