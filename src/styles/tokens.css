@@ -1,0 +1,101 @@
+/* ============================================================
+   Windows-Bar — Design Tokens
+   Single source of truth for spacing, typography, radius, motion.
+   Imported FIRST so every other stylesheet can rely on these vars.
+   ============================================================ */
+
+:root {
+  /* Spacing — 4px base grid */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+
+  /* Radius scale */
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  /* --radius (window) is set from settings in App.tsx */
+
+  /* Typography scale (relative to --font-size-base) */
+  --fs-caption: 0.6875rem; /* ~11px */
+  --fs-xs: 0.75rem;        /* ~12px */
+  --fs-sm: 0.8125rem;      /* ~13px */
+  --fs-base: 0.875rem;     /* ~14px */
+  --fs-md: 1rem;           /* ~16px */
+  --fs-lg: 1.25rem;        /* ~20px */
+  --fs-xl: 1.5rem;         /* ~24px */
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 0.12s;
+  --dur: 0.18s;
+  --dur-slow: 0.32s;
+
+  /* Elevation */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 25px 60px -15px rgba(0, 0, 0, 0.6);
+
+  /* Fallback defaults for vars that App.tsx normally sets at runtime.
+     These prevent unstyled flashes if JS hasn't run yet. */
+  --surface: rgba(255, 255, 255, 0.02);
+  --text-dim: #4a4a5a;
+  --accent-rgb: 124, 92, 252;
+}
+
+/* ── Global disabled state for all form controls & buttons ── */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Unified focus ring for keyboard users ──
+   The main search field is borderless by design and is always focused,
+   so it is explicitly excluded — otherwise it shows a huge accent box. */
+button:focus-visible,
+input:not(.search-input):focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.search-input:focus,
+.search-input:focus-visible {
+  outline: none;
+}
+
+/* ── Color swatch (for /color results) ── */
+.result-icon.swatch {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Respect reduced-motion preference ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* When the user disables animations in Settings, App.tsx adds .no-anim to <html> */
+html.no-anim *,
+html.no-anim *::before,
+html.no-anim *::after {
+  animation-duration: 0.001ms !important;
+  transition-duration: 0.001ms !important;
+}
