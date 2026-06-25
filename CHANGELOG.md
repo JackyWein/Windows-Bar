@@ -1,6 +1,24 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.1.1] - 2026-06-25
+
+**🎵 Media-Player-Plugin-Unterstützung & YouTube Music**
+
+### 🎵 Eingebetteter Media-Player
+* **Neue generische Plugin-Fähigkeit:** Plugins können jetzt einen eingebetteten Web-Player bereitstellen (Manifest-Feld `mediaPanel`). Die App rendert dafür eine echte Chromium-Ansicht, die im Hintergrund weiterspielt — so können beliebige Musik-/Media-Plugins gebaut werden.
+* **Now-Playing-Leiste unter der Suche** (volle Breite, auch im Kompaktmodus) mit Cover, Cover-Glow, Like/Dislike, Vor/Zurück/Play-Pause, **klickbarem Fortschrittsbalken**, Lautstärke (Hover-Aufklapper) und Restzeit.
+* **YouTube Music** läuft als eigenständiges Plugin: Login direkt im eingebetteten Player (Google-Sign-in funktioniert), Hintergrund-Wiedergabe und ein **lokaler API-Server** (`http://127.0.0.1:26538/api/v1/song`, kompatibel zu gängigen Stream-Overlays) inkl. Steuer-Endpunkten.
+
+### 🐛 Fixes & Robustheit
+* **Plugin-Bridge repariert:** `invokeMainAction` war durch einen Namens-Tippfehler nie erreichbar — Media-Plugins können den Player jetzt tatsächlich ansteuern.
+* **Plugin-Installation repariert:** Der „Plugin installieren"-Dialog übergab nur den Ordnernamen (funktionierte nie) → jetzt nativer Ordner-Dialog.
+* **Now-Playing stabilisiert:** Auslesen über die offizielle YouTube-Player-API (korrekte Zeit pro Song), Cover-Fallback und Halten des letzten gültigen Zustands bei Songwechseln → kein Flackern mehr.
+* Plugin-Einstellungen wirken jetzt **live** (die App wird über Änderungen benachrichtigt).
+
+### 🪟 Verhalten
+* Die Bar startet versteckt und erscheint nur per Hotkey; im Entwickler-Modus startet sie sichtbar.
+
 ## [1.1.0] - 2026-06-24
 
 **✨ Großes Overhaul-Update: Fixes, neue Werkzeuge, Design & Anpassbarkeit**
