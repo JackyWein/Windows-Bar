@@ -1016,35 +1016,25 @@ export function SettingsView({ settings, onBack, onUpdateSetting, onReset, onCle
     const handleInstall = async () => {
       setPluginsLoading(true);
       try {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.webkitdirectory = true;
-        input.onchange = async () => {
-          const files = input.files;
-          const folder = files?.[0]?.webkitRelativePath?.split('/')[0];
-          if (!folder) return;
-          try {
-            await window.pluginAPI.install(folder);
-            const list = await window.pluginAPI.list();
-            setPlugins((list as Record<string, unknown>[]).map((p) => {
-              const pid = String(p.id);
-              const enabledMap = settings.plugins?.enabled || {};
-              return {
-                id: pid,
-                name: String(p.name),
-                version: String(p.version),
-                description: String(p.description ?? ''),
-                author: String(p.author ?? ''),
-                enabled: enabledMap[pid] !== false,
-              };
-            }));
-          } catch (e) {
-            console.error('Plugin install error:', e);
-          }
-          setPluginsLoading(false);
-        };
-        input.click();
-      } catch {
+        const installed = await window.pluginAPI.installDialog?.();
+        if (installed) {
+          const list = await window.pluginAPI.list();
+          setPlugins((list as Record<string, unknown>[]).map((p) => {
+            const pid = String(p.id);
+            const enabledMap = settings.plugins?.enabled || {};
+            return {
+              id: pid,
+              name: String(p.name),
+              version: String(p.version),
+              description: String(p.description ?? ''),
+              author: String(p.author ?? ''),
+              enabled: enabledMap[pid] !== false,
+            };
+          }));
+        }
+      } catch (e) {
+        console.error('Plugin install error:', e);
+      } finally {
         setPluginsLoading(false);
       }
     };

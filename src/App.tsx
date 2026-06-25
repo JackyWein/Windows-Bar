@@ -6,7 +6,9 @@ import { SearchView } from "./views/SearchView";
 import { SettingsView } from "./views/SettingsView";
 import { AiView } from "./views/AiView";
 import { NotesView } from "./views/NotesView";
-import { MediaControlView } from "./views/MediaControlView";
+import { MediaPanel } from "./components/MediaPanel";
+import type { MediaPanelConfig } from "./components/MediaPanel";
+import { mediaBus } from "./core/media/mediaBus";
 import { registerBuiltinCommands } from "./core/commands/builtin";
 import { initExternalCommands } from "./core/commands/external-loader";
 import { initPluginLoader } from "./core/plugins/loader";
@@ -172,6 +174,8 @@ function App() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("search");
   const [activeNoteId, setActiveNoteId] = useState<number | null>(null);
+  const [mediaConfig, setMediaConfig] = useState<MediaPanelConfig | null>(null);
+  const [showMediaBar, setShowMediaBar] = useState(true);
   const [confirmDialog, confirm] = useConfirm();
 
   // Keep the configured search-window width available to event handlers.
@@ -272,6 +276,98 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.appearance.windowWidth]);
+
+  // Size the window for whichever view is active (covers plugin-triggered navigation, e.g. /music).
+  useEffect(() => {
+    try {
+      if (viewMode === "search") window.electronAPI.resizeWindow(settings.appearance.windowWidth || 750, 600);
+      else if (viewMode === "media-control") window.electronAPI.resizeWindow(1000, 720);
+      else window.electronAPI.resizeWindow(850, 700);
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
+
+  // Detect a media-panel plugin (e.g. YouTube Music) from installed plugin manifests.
+  const detectMedia = useCallback(async () => {
+    try {
+      const list = await window.pluginAPI?.list?.();
+      if (!list) return;
+      for (const p of list as Array<{ id: string; name: string }>) {
+        const pid = String(p.id);
+        if (settings.plugins?.enabled?.[pid] === false) continue;
+        const manifest = (await window.pluginAPI.getManifest(pid)) as
+          | { mediaPanel?: { url?: string; partition?: string; name?: string; userAgent?: string } }
+          | null;
+        const mp = manifest?.mediaPanel;
+        if (mp?.url) {
+          setMediaConfig({
+            pluginId: pid,
+            url: mp.url,
+            partition: mp.partition || "persist:media",
+            name: mp.name || p.name,
+            userAgent: mp.userAgent,
+          });
+          // Apply the plugin's own settings (now-playing bar + API server/port).
+          try {
+            const ps = (await window.pluginAPI.getSettings(pid)) as
+              | { showNowPlayingBar?: boolean; apiEnabled?: boolean; apiPort?: number }
+              | undefined;
+            setShowMediaBar(ps?.showNowPlayingBar !== false);
+            window.pluginAPI
+              .invokeMainAction(pid, "configure", { apiEnabled: ps?.apiEnabled !== false, apiPort: Number(ps?.apiPort) || 26538 })
+              .catch(() => {});
+          } catch { /* ignore */ }
+          return;
+        }
+      }
+      setMediaConfig(null);
+    } catch { /* ignore */ }
+  }, [settings.plugins?.enabled]);
+
+  useEffect(() => {
+    detectMedia();
+    const t = setTimeout(detectMedia, 2500); // retry after plugins finish loading
+    const onFocus = () => detectMedia();
+    window.addEventListener("focus", onFocus);
+    window.pluginAPI?.onPluginSettingsUpdated?.(() => detectMedia());
+    return () => { clearTimeout(t); window.removeEventListener("focus", onFocus); };
+  }, [detectMedia]);
+
+  // Poll the active media plugin for now-playing state (drives the compact bar).
+  useEffect(() => {
+    if (!mediaConfig) { mediaBus.reset(); return; }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const st = (await window.pluginAPI.invokeMainAction(mediaConfig.pluginId, "getState")) as
+          | { isPlaying?: boolean; currentTrack?: { title: string; artist: string; album?: string; artwork?: string } | null; volume?: number; currentTime?: number; duration?: number; likeStatus?: string }
+          | null;
+        if (cancelled || !st) return;
+        mediaBus.set({
+          isPlaying: !!st.isPlaying,
+          track: st.currentTrack || null,
+          volume: typeof st.volume === "number" ? st.volume : 100,
+          currentTime: st.currentTime || 0,
+          duration: st.duration || 0,
+          likeStatus: st.likeStatus || "",
+        });
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [mediaConfig]);
+
+  // Route media controls to the plugin always (so the compact bar's buttons work
+  // even when the full player view was never opened).
+  useEffect(() => {
+    if (!mediaConfig) { mediaBus.setController(null); return; }
+    const pid = mediaConfig.pluginId;
+    mediaBus.setController((action, value) => {
+      window.pluginAPI?.invokeMainAction?.(pid, "control", { action, value });
+    });
+    return () => mediaBus.setController(null);
+  }, [mediaConfig]);
 
   // Auto-follow the Windows light/dark preference when enabled.
   useEffect(() => {
@@ -418,10 +514,11 @@ function App() {
           initialNoteId={activeNoteId}
         />
       )}
-      {viewMode === "media-control" && (
-        <MediaControlView
-          onBack={backToSearch}
-        />
+      {/* The actual web player lives in a plugin-owned WebContentsView (real
+          Chromium → Google sign-in works). It persists in the background; this
+          panel just renders the chrome and positions the view. */}
+      {viewMode === "media-control" && mediaConfig && (
+        <MediaPanel config={mediaConfig} onBack={backToSearch} />
       )}
       {viewMode === "search" && (
         <SearchView
@@ -430,6 +527,8 @@ function App() {
           onOpenSettings={openSettings}
           onOpenNote={openNote}
           onOpenMediaControl={openMediaControl}
+          hasMedia={!!mediaConfig}
+          showMediaBar={showMediaBar}
         />
       )}
       {confirmDialog}

@@ -1,5 +1,5 @@
 // Plugin Manager - handles installation, loading, and lifecycle of plugins
-import { app, ipcMain, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import Module from 'module';
@@ -370,6 +370,15 @@ export function registerPluginIPC() {
     return await installPlugin(source);
   });
 
+  // Pick a plugin folder via a native dialog and install it (returns the real path).
+  ipcMain.handle('plugin:install-dialog', async () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const opts = { properties: ['openDirectory'] as Array<'openDirectory'>, title: 'Plugin-Ordner wählen (mit manifest.json)' };
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return null;
+    return await installPlugin(result.filePaths[0]);
+  });
+
   ipcMain.handle('plugin:uninstall', async (_event, id: string) => {
     return await uninstallPlugin(id);
   });
@@ -408,6 +417,9 @@ export function registerPluginIPC() {
     try {
       const settingsPath = join(getPluginDir(id), 'settings.json');
       await fs.writeFile(settingsPath, JSON.stringify(plugin.settings, null, 2));
+      // Notify the renderer so live consumers (e.g. media panel) can re-apply.
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.webContents.send('plugin:settings-updated', { pluginId: id, settings: plugin.settings });
       return true;
     } catch {
       return false;

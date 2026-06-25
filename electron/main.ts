@@ -785,8 +785,11 @@ function createWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
-    show: true,  // Show window immediately on startup
+    // Hidden on startup in production (only the hotkey shows it); visible in dev so it's testable
+    // even while the installed app holds the global hotkey.
+    show: isDev,
     hasShadow: false,
+    paintWhenInitiallyHidden: true, // keep the renderer warm so the first hotkey press is instant
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       nodeIntegration: false,

@@ -22,8 +22,17 @@ Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokument
 * **Farb-Werkzeug:** `/color #ff6600` zeigt jetzt eine Farbvorschau (Swatch) + HEX/RGB/HSL zum Kopieren.
 * **Mehr Hashes:** `/md5`, `/sha1`, `/sha512` (zusätzlich zum bestehenden `/hash` = SHA-256). Base64 (`/enc`, `/dec`) ist jetzt UTF-8-/Umlaut-sicher.
 
+### 🎵 Media-Player & Plugins
+* **Player-Leiste unter der Suche** (volle Breite, mit Fortschrittsanzeige) — bleibt auch im **Kompaktmodus** sichtbar; mit großer Player-Ansicht (Seek, Lautstärke).
+* **Plugin-Bridge repariert:** `invokeMainAction` war durch einen Namens-Tippfehler nie erreichbar — Media-Plugins (z.B. das separate **YouTube-Music-Plugin**) können den Player jetzt tatsächlich ansteuern.
+* Das YouTube-Music-Plugin selbst (Login, Hintergrund-Wiedergabe, API-Server) ist ein **eigenständiges Plugin** und nicht Teil der App.
+
+### 🪟 Verhalten beim Start
+* Die Bar **startet jetzt versteckt** und erscheint nur per Hotkey (Alt+Space) — kein lästiges Wegklicken mehr nach dem PC-Start. (Im Entwickler-Modus startet sie sichtbar, damit sie trotz belegtem Hotkey testbar ist.)
+
 ### 🎨 Design
 * Neues **Design-Token-System** (einheitliche Abstände, Typografie, Radien, Animationen) für ein durchgängig stimmiges, hochwertiges Bild.
+* Fokus-Rahmen für Tastatur-Navigation hinzugefügt — das große Suchfeld ist davon ausgenommen (kein Rahmen ums Eingabefeld).
 * Neues auffälliges **Signature-Theme „Aurora ✦"** (tiefes Violett mit Magenta-Glow).
 * **Light-Mode überarbeitet** — kräftigere Kontraste, weniger blass.
 * Einheitliche Hover-/Fokus-/Deaktiviert-Zustände, sauberere Buttons & Icons, `prefers-reduced-motion` wird respektiert.

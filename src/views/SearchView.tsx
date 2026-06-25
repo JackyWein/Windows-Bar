@@ -18,6 +18,8 @@ interface SearchViewProps {
   onOpenSettings: () => void;
   onOpenNote: (id?: number) => void;
   onOpenMediaControl: () => void;
+  hasMedia?: boolean;
+  showMediaBar?: boolean;
 }
 
 // Focus zones for Tab navigation
@@ -120,7 +122,7 @@ function calculateScore(itemTitle: string, itemType: string, itemIdOrPath: strin
 }
 
 
-export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onOpenMediaControl }: SearchViewProps) {
+export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onOpenMediaControl, hasMedia, showMediaBar }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [expandWeb, setExpandWeb] = useState(false);
@@ -129,7 +131,6 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [recentItems, setRecentItems] = useState<SearchResult[]>([]);
-  const [compactPlayerVisible, setCompactPlayerVisible] = useState(false);
 
   // 🧠 Zustand für die Klick-Historie
   const [clickHistory, setClickHistory] = useState<Record<string, number>>({});
@@ -796,7 +797,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
   }
 
   function getQuickActions() {
-    return [
+    const actions = [
       { title: 'KI Chat', sub: 'Google Gemini', iconClass: 'ai', icon: <Bot size={15} />, action: onOpenAI },
       { title: 'Web Suche', sub: 'Inline Ergebnisse', iconClass: 'web', icon: <Globe size={15} />, action: () => setQuery('/g ') },
       { title: 'Dateien', sub: 'Schnellzugriff', iconClass: 'files', icon: <File size={15} />, action: () => setQuery('Downloads') },
@@ -810,6 +811,10 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
         }
       },
     ];
+    if (hasMedia) {
+      actions.push({ title: 'Musik', sub: 'YouTube Music', iconClass: 'ai', icon: <Music size={15} />, action: onOpenMediaControl });
+    }
+    return actions;
   }
 
   // Display computation (Web results merging + Folders)
@@ -1040,12 +1045,8 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
           <span>Windows Bar</span>
         </div>
 
-        {/* Compact Plugin Players */}
-        {compactPlayerVisible && (
-          <div className="compact-plugins-container">
-            <CompactPlayer onExpand={onOpenMediaControl} onVisibilityChange={setCompactPlayerVisible} />
-          </div>
-        )}
+        {/* Now-playing bar — only when a media plugin is active and the user kept it on */}
+        {hasMedia && showMediaBar !== false && <CompactPlayer onExpand={onOpenMediaControl} />}
       </div>
     </div>
   );

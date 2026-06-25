@@ -106,6 +106,7 @@ interface ElectronAPI {
 interface PluginAPI {
   list: () => Promise<unknown[]>;
   install: (source: string) => Promise<unknown>;
+  installDialog: () => Promise<unknown>;
   uninstall: (id: string) => Promise<void>;
   toggle: (id: string, enabled: boolean) => Promise<void>;
   getPath: () => Promise<string>;
