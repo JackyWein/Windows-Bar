@@ -22,6 +22,8 @@ export interface SearchResult {
   folderDepth?: number;
   /** Hex/CSS color to render as a swatch next to the result (e.g. /color command) */
   swatch?: string;
+  /** Named lucide icon (kebab-case) to render instead of the type-based default */
+  icon?: string;
   /** Marks a pinned/bookmarked result */
   isBookmark?: boolean;
   action?: () => void;
@@ -72,6 +74,8 @@ export interface Command {
   trigger: string | RegExp;
   description: string;
   usage?: string;
+  /** Named lucide icon (kebab-case) shown for this command in the palette/help */
+  icon?: string;
   category: 'calc' | 'web' | 'system' | 'text' | 'notes' | 'power' | 'clipboard' | 'weather';
   handler: (args: string, ctx: CommandContext) => CommandResult | Promise<CommandResult>;
   enabled: boolean;

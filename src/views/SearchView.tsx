@@ -6,7 +6,71 @@ import {
   Code, FileSpreadsheet, Presentation, CloudRain, CloudSun,
   Wind, Droplets, Eye, Cloud, Gauge, Sunrise, Sunset, Sun,
   Snowflake, CloudDrizzle, CloudHail, CloudFog, Settings,
+  Dices, KeyRound, Hash, Palette, Type, Binary, Clock, Calendar,
+  Cake, Ruler, Coins, Lock, Unlock, Braces, Repeat, Link, QrCode,
+  Network, BookOpen, Languages, Activity, StickyNote, Clipboard,
+  Cpu, Battery, List, Skull, Play, Power, RotateCcw, LogOut, Moon,
+  Volume2, VolumeX, Trash2, Camera, Smile, Zap, HelpCircle, Terminal,
 } from 'lucide-react';
+
+// Named-icon registry: maps a kebab-case name (set on a command/result) to a lucide
+// component, so commands render an icon that actually fits instead of one generic
+// per-type glyph.
+const ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
+  'calculator': Calculator, 'dices': Dices, 'key-round': KeyRound, 'hash': Hash,
+  'palette': Palette, 'type': Type, 'binary': Binary, 'clock': Clock, 'calendar': Calendar,
+  'cake': Cake, 'ruler': Ruler, 'coins': Coins, 'lock': Lock, 'unlock': Unlock, 'braces': Braces,
+  'repeat': Repeat, 'link': Link, 'qr-code': QrCode, 'network': Network, 'globe': Globe,
+  'gauge': Gauge, 'book-open': BookOpen, 'languages': Languages, 'activity': Activity,
+  'cloud-sun': CloudSun, 'sticky-note': StickyNote, 'clipboard': Clipboard, 'cpu': Cpu,
+  'battery': Battery, 'list': List, 'skull': Skull, 'play': Play, 'power': Power,
+  'rotate-ccw': RotateCcw, 'log-out': LogOut, 'moon': Moon, 'volume-x': VolumeX,
+  'volume-2': Volume2, 'trash-2': Trash2, 'camera': Camera, 'smile': Smile, 'zap': Zap,
+  'help-circle': HelpCircle, 'terminal': Terminal, 'settings': Settings, 'bot': Bot,
+};
+
+function renderNamedIcon(name: string | undefined, size = 16): React.ReactNode | null {
+  if (!name) return null;
+  const Cmp = ICONS[name];
+  return Cmp ? <Cmp size={size} /> : null;
+}
+
+// Per-category metadata for the /help palette (label + fitting icon).
+const CATEGORY_META: Record<string, { label: string; type: SearchResult['type']; icon: string }> = {
+  calc:      { label: 'Rechner & Generatoren', type: 'calc',   icon: 'calculator' },
+  text:      { label: 'Text & Hash-Tools',     type: 'calc',   icon: 'type' },
+  web:       { label: 'Web & Netzwerk',        type: 'web',    icon: 'globe' },
+  weather:   { label: 'Wetter',                type: 'web',    icon: 'cloud-sun' },
+  notes:     { label: 'Notizen',               type: 'system', icon: 'sticky-note' },
+  clipboard: { label: 'Zwischenablage',        type: 'system', icon: 'clipboard' },
+  system:    { label: 'System',                type: 'system', icon: 'cpu' },
+  power:     { label: 'Power-User',            type: 'system', icon: 'zap' },
+};
+
+// Per-command icon overrides, keyed by trigger (no trailing space). Falls back to the
+// category icon for anything not listed (and for plugin/external commands).
+const COMMAND_ICONS: Record<string, string> = {
+  '/calc': 'calculator', '/random': 'dices', '/pass': 'key-round', '/uuid': 'hash',
+  '/color': 'palette', '/lorem': 'type', '/bin': 'binary', '/hex': 'binary',
+  '/now': 'clock', '/week': 'calendar', '/age': 'cake', '/days': 'calendar', '/len': 'ruler',
+  '/units': 'ruler', '/currency': 'coins',
+  '/enc': 'lock', '/dec': 'unlock', '/md5': 'hash', '/sha1': 'hash', '/sha512': 'hash',
+  '/json': 'braces', '/rev': 'repeat', '/upper': 'type', '/lower': 'type', '/url': 'link', '/unurl': 'link',
+  '/qr': 'qr-code', '/ip': 'network', '/dns': 'globe', '/speedtest': 'gauge', '/wiki': 'book-open',
+  '/tr': 'languages', '/ping': 'activity', '/whois': 'network',
+  '/wetter': 'cloud-sun', '/weather': 'cloud-sun',
+  '/note': 'sticky-note', '/notes': 'sticky-note',
+  '/history': 'clipboard', '/clip': 'clipboard', '/cp': 'clipboard',
+  '/sys': 'cpu', '/battery': 'battery', '/proc': 'list', '/uptime': 'clock', '/ports': 'network',
+  '/kill': 'skull', '/run': 'play',
+  '/lock': 'lock', '/shutdown': 'power', '/restart': 'rotate-ccw', '/logoff': 'log-out',
+  '/sleep': 'moon', '/mute': 'volume-x', '/volume': 'volume-2', '/trash': 'trash-2', '/ss': 'camera',
+  '/emoji': 'smile',
+};
+
+function commandIconFor(trigger: string, category: string): string {
+  return COMMAND_ICONS[trigger] ?? CATEGORY_META[category]?.icon ?? 'terminal';
+}
 
 import { commandRegistry } from '../core/commands/registry';
 import { CompactPlayer } from '../components/CompactPlayer';
@@ -46,13 +110,15 @@ function getFileTypeIcon(path: string | undefined): React.ReactNode {
   return <File size={16} />;
 }
 
-function getIcon(type: string, path?: string) {
+function getIcon(type: string, path?: string, iconName?: string) {
+  const named = renderNamedIcon(iconName);
+  if (named) return named;
   switch (type) {
     case 'app': return <AppWindow size={16} />;
     case 'game': return <Gamepad2 size={16} />;
     case 'file': return getFileTypeIcon(path);
-    case 'system': return <CloudRain size={16} />;
-    case 'weather': return <CloudRain size={16} />;
+    case 'system': return <Settings size={16} />;
+    case 'weather': return <CloudSun size={16} />;
     case 'calc': return <Calculator size={16} />;
     case 'ai': return <Bot size={16} />;
     case 'web': return <Globe size={16} />;
@@ -408,15 +474,22 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
 
         const ctx = buildCommandContext();
         const result = cmd.handler(args, ctx);
+        // Default each result's icon to one that fits the command (unless the result
+        // sets its own, or it's a launchable file/app/game with a meaningful type icon).
+        const cmdIcon = cmd.icon || commandIconFor(triggerStr.replace(/ $/, ''), cmd.category);
 
         const attachCopy = (cmdResult: CommandResult): SearchResult[] => {
           const copyVal = cmdResult.copyToClipboard;
           const launchable = new Set(['app', 'web', 'file']);
-          return cmdResult.results.map(r => ({
-            ...r,
-            ...(copyVal ? { copyToClipboard: copyVal } : {}),
-            ...(r.copyToClipboard ? {} : !launchable.has(r.type) && (r.type as any) !== 'cmd' ? { copyToClipboard: r.title } : {}),
-          }));
+          return cmdResult.results.map(r => {
+            const hasTypeIcon = r.type === 'app' || r.type === 'file' || r.type === 'game';
+            return {
+              ...r,
+              ...(r.icon || hasTypeIcon ? {} : { icon: cmdIcon }),
+              ...(copyVal ? { copyToClipboard: copyVal } : {}),
+              ...(r.copyToClipboard ? {} : !launchable.has(r.type) && (r.type as any) !== 'cmd' ? { copyToClipboard: r.title } : {}),
+            };
+          });
         };
 
         if (result instanceof Promise) {
@@ -440,13 +513,6 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
         return;
       }
 
-      const categoryInfo: Record<string, { label: string; type: SearchResult['type'] }> = {
-        calc: { label: 'Rechner & Generatoren', type: 'calc' }, text: { label: 'Text & Hash-Tools', type: 'calc' },
-        web: { label: 'Web & Netzwerk', type: 'web' }, weather: { label: 'Wetter', type: 'web' },
-        notes: { label: 'Notizen', type: 'system' }, clipboard: { label: 'Zwischenablage', type: 'system' },
-        system: { label: 'System', type: 'system' }, power: { label: 'Power-User', type: 'system' },
-      };
-
       const filtered = (filter ? allCmds.filter(c => {
         const trigger = typeof c.trigger === 'string' ? c.trigger : '';
         return (trigger.toLowerCase().includes(filter) || c.id.toLowerCase().includes(filter) || c.description.toLowerCase().includes(filter) || c.category.toLowerCase().includes(filter) || (c.aliases && c.aliases.some(a => a.toLowerCase().includes(filter))));
@@ -455,22 +521,22 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
       const grouped = [];
       for (const cat of ['calc', 'text', 'web', 'weather', 'notes', 'clipboard', 'system', 'power']) {
         const catCmds = filtered.filter(c => c.category === cat);
-        if (catCmds.length > 0 && categoryInfo[cat]) grouped.push({ cat, info: categoryInfo[cat], commands: catCmds });
+        if (catCmds.length > 0 && CATEGORY_META[cat]) grouped.push({ cat, info: CATEGORY_META[cat], commands: catCmds });
       }
 
       if (grouped.length === 0) {
-        setResults([{ id: 'cmd-no-match', title: 'Keine Befehle gefunden', subtitle: `/help oder /${filter} — versuche einen anderen Begriff`, type: 'system' }]);
+        setResults([{ id: 'cmd-no-match', title: 'Keine Befehle gefunden', subtitle: `/help oder /${filter} — versuche einen anderen Begriff`, type: 'system', icon: 'help-circle' }]);
         return;
       }
 
       const cmdResults: SearchResult[] = [];
       let idx = 0;
       for (const group of grouped) {
-        cmdResults.push({ id: `cat-${group.cat}`, title: group.info.label, subtitle: `${group.commands.length} Befehl${group.commands.length > 1 ? 'e' : ''}`, type: group.info.type, isHelpCategory: true });
+        cmdResults.push({ id: `cat-${group.cat}`, title: group.info.label, subtitle: `${group.commands.length} Befehl${group.commands.length > 1 ? 'e' : ''}`, type: group.info.type, isHelpCategory: true, icon: group.info.icon });
         for (const c of group.commands) {
           const trigger = typeof c.trigger === 'string' ? c.trigger.replace(/ $/, '') : c.id;
           idx++;
-          cmdResults.push({ id: `help-cmd-${idx}`, title: trigger, subtitle: c.description + (c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''), type: group.info.type, path: trigger });
+          cmdResults.push({ id: `help-cmd-${idx}`, title: trigger, subtitle: c.description + (c.aliases?.length ? `  ·  ${c.aliases.join(', ')}` : ''), type: group.info.type, path: trigger, icon: c.icon || commandIconFor(trigger, c.category) });
         }
       }
       setResults(cmdResults);
@@ -1000,6 +1066,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
               if (res.isHelpCategory) {
                 return (
                   <div key={res.id} className="cmd-category-header">
+                    {res.icon && <span className="cmd-category-icon">{renderNamedIcon(res.icon, 13)}</span>}
                     <span className="cmd-category-label">{res.title}</span>
                     {res.subtitle && <span className="cmd-category-count">{res.subtitle}</span>}
                   </div>
@@ -1009,8 +1076,11 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
               if (res.id.startsWith('help-cmd-')) {
                 return (
                   <div key={res.id} className={`result-item cmd-item ${idx === selectedIndex ? 'selected' : ''}`} onClick={() => executeAction(res)} onMouseEnter={() => { if (interactionMode.current === 'mouse') setSelectedIndex(idx); }} tabIndex={focusedZone === FOCUS_ZONE_RESULTS ? 0 : -1}>
-                    <div className="cmd-trigger">{res.title}</div>
-                    <div className="result-content"><span className="result-subtitle">{res.subtitle}</span></div>
+                    <div className={`result-icon cmd-icon ${res.type}`}>{getIcon(res.type, res.path, res.icon)}</div>
+                    <div className="result-content">
+                      <span className="cmd-trigger">{res.title}</span>
+                      {res.subtitle && <span className="result-subtitle">{res.subtitle}</span>}
+                    </div>
                     <span className="result-enter">↵</span>
                   </div>
                 );
@@ -1021,7 +1091,7 @@ export function SearchView({ settings, onOpenAI, onOpenSettings, onOpenNote, onO
                   <div className={`result-icon ${res.swatch ? 'swatch' : res.type}`} style={res.swatch ? { background: res.swatch } : undefined}>
                     {res.swatch ? null : res.iconBase64 && res.iconBase64.length > 100 ? (
                       <img src={res.iconBase64} alt="" className="result-icon-img" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                    ) : getIcon(res.type, res.path)}
+                    ) : getIcon(res.type, res.path, res.icon)}
                   </div>
                   <div className="result-content">
                     <span className="result-title" style={res.isExpandBtn ? { color: 'var(--accent)' } : {}}>{res.title}</span>

@@ -58,9 +58,20 @@ html {
   padding-top: 12vh;
 }
 
+/* Full-height panels (settings, notes) must fill the window. The 12vh offset is
+   only meant for the floating search bar — on a full-height view it pushes the
+   panel's bottom, and the end of its inner scroll area, off-screen so the last
+   items can't be reached. (AI and media views set this on their own wrappers.) */
+.app-container:has(.settings-view),
+.app-container:has(.notes-view) {
+  padding-top: 0;
+}
+
 .search-glass {
   width: 680px;
-  max-height: 95vh;
+  /* Must stay below 100vh minus the .app-container 12vh top offset, otherwise a
+     tall results list overflows the window and its last rows can't be scrolled to. */
+  max-height: 85vh;
   background: var(--bg);
   backdrop-filter: blur(var(--blur-amount)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--blur-amount)) saturate(180%);

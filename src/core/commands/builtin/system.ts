@@ -86,13 +86,62 @@ const systemCommands: readonly Command[] = [
     enabled: true,
   },
   {
+    id: 'uptime',
+    trigger: '/uptime',
+    description: 'Systemlaufzeit & letzter Start',
+    aliases: ['/boot'],
+    category: 'system',
+    async handler(_args, ctx) {
+      try {
+        const { uptimeSec, bootTime } = await ctx.api.getUptime();
+        const d = Math.floor(uptimeSec / 86400);
+        const h = Math.floor((uptimeSec % 86400) / 3600);
+        const m = Math.floor((uptimeSec % 3600) / 60);
+        const dur = [d ? `${d}d` : '', h ? `${h}h` : '', `${m}m`].filter(Boolean).join(' ');
+        return { results: [
+          { id: 'uptime', title: `⏱ Laufzeit: ${dur}`, subtitle: `Letzter Start: ${new Date(bootTime).toLocaleString('de-DE')}`, type: 'system' },
+        ] };
+      } catch {
+        return { results: [{ id: 'cmd-err', title: 'Laufzeit nicht verfügbar', subtitle: 'Fehler beim Abrufen', type: 'system' }] };
+      }
+    },
+    enabled: true,
+  },
+  {
+    id: 'ports',
+    trigger: '/ports',
+    description: 'Lauschende TCP-Ports anzeigen',
+    usage: 'z.B. /ports  •  /ports 3000  •  /ports node',
+    aliases: ['/netstat'],
+    category: 'system',
+    async handler(args: string, ctx) {
+      try {
+        const filter = args.trim().toLowerCase();
+        let ports = await ctx.api.listPorts();
+        if (filter) ports = ports.filter(p => String(p.port).includes(filter) || p.process.toLowerCase().includes(filter));
+        if (!ports.length) {
+          return { results: [{ id: 'ports-none', title: 'Keine lauschenden Ports', subtitle: filter ? `Filter: ${filter}` : 'TCP LISTENING', type: 'system' }] };
+        }
+        return { results: ports.slice(0, 20).map((p, i) => ({
+          id: `port-${i}`,
+          title: `:${p.port} — ${p.process}`,
+          subtitle: `${p.address} • PID ${p.pid}`,
+          type: 'app' as const,
+        })) };
+      } catch {
+        return { results: [{ id: 'cmd-err', title: 'Ports nicht verfügbar', subtitle: 'Fehler beim Abrufen', type: 'system' }] };
+      }
+    },
+    enabled: true,
+  },
+  {
     id: 'kill',
     trigger: '/kill ',
     description: 'Prozess beenden',
     usage: 'z.B. /kill notepad  •  /kill chrome',
     category: 'system',
     handler(args: string, ctx) {
-      const name = args.trim();
+      const name = args.trim().replace(/\.exe$/i, '');
       if (!name) {
         return { results: [{ id: 'cmd-err', title: 'Kein Prozessname', subtitle: '/kill notepad', type: 'system' }] };
       }

@@ -17,10 +17,6 @@ interface ElectronAPI {
   searchEverything: (query: string) => Promise<unknown[]>;
   fetchInstantAnswer: (query: string) => Promise<unknown[]>;
 
-  startTerminal: () => void;
-  stopTerminal: () => void;
-  sendTerminalInput: (data: string) => void;
-  onTerminalOutput: (callback: (data: string) => void) => void;
   listDirectory: (path: string) => Promise<unknown[]>;
   getFileIcon: (path: string) => Promise<string | null>;
 
@@ -33,6 +29,8 @@ interface ElectronAPI {
   onScreenshotResult: (callback: (result: { success: boolean; path?: string; error?: string }) => void) => void;
   killProcess: (name: string) => Promise<{ success: boolean; error?: string }>;
   listProcesses: () => Promise<{ name: string; pid: string; memory: string }[]>;
+  getUptime: () => Promise<{ uptimeSec: number; bootTime: number }>;
+  listPorts: () => Promise<{ port: number; pid: string; process: string; address: string }[]>;
   readClipboard: () => Promise<string>;
   writeClipboard: (text: string) => void;
 
@@ -70,6 +68,7 @@ interface ElectronAPI {
   // System theme
   getSystemTheme: () => Promise<'light' | 'dark'>;
   onSystemThemeChange: (callback: (theme: 'light' | 'dark') => void) => void;
+  removeSystemThemeListeners: () => void;
 
   // AI Chat
   aiChat: (request: AIChatRequest) => Promise<unknown>;
@@ -131,6 +130,7 @@ interface PluginAPI {
    onPluginReloadCommands: (callback: (data: { pluginId: string }) => void) => void;
    requestCommands: () => Promise<{ success: boolean }>;
    signIn: (pluginId: string) => Promise<{ success: boolean; message?: string }>;
+   removePluginSettingsListeners: () => void;
 }
 
 interface Window {

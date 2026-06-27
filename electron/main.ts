@@ -65,7 +65,44 @@ interface IndexItem {
   iconPath?: string;  // cached path to extract icon from
 }
 
-let indexItems: IndexItem[] = [];
+let indexItems: IndexItem[] = [];        // working set the scanners build into
+let publishedIndex: IndexItem[] = [];    // immutable snapshot that search reads; swapped atomically
+
+// Persisted index cache — lets the very first search after a cold start hit a
+// preloaded snapshot instead of waiting for the full filesystem scan to finish.
+const INDEX_CACHE_VERSION = 1;
+const indexCacheFile = () => join(app.getPath('userData'), 'index-cache.json');
+
+async function loadIndexCache(): Promise<boolean> {
+  try {
+    const stat = await fs.stat(indexCacheFile());
+    if (stat.size > 64 * 1024 * 1024) return false; // implausibly large — ignore
+    const raw = await fs.readFile(indexCacheFile(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed?.version === INDEX_CACHE_VERSION && Array.isArray(parsed.items)) {
+      // Only trust well-shaped items — a single malformed entry would otherwise
+      // crash searchIndex (item.title.toLowerCase()) on every keystroke until the
+      // full rescan finishes.
+      const items = parsed.items.filter((i: unknown): i is IndexItem =>
+        !!i && typeof (i as IndexItem).title === 'string' && typeof (i as IndexItem).path === 'string'
+      ).slice(0, 200000);
+      if (items.length) {
+        publishedIndex = items;
+        console.log(`[WindowsBar] Loaded ${publishedIndex.length} items from index cache`);
+        return true;
+      }
+    }
+  } catch { /* no / invalid cache — fall back to a fresh scan */ }
+  return false;
+}
+
+async function saveIndexCache(): Promise<void> {
+  try {
+    await fs.writeFile(indexCacheFile(), JSON.stringify({ version: INDEX_CACHE_VERSION, ts: Date.now(), items: publishedIndex }), 'utf-8');
+  } catch (e) {
+    console.error('[WindowsBar] Failed to save index cache:', e);
+  }
+}
 
 const APP_EXTS = new Set(['.exe', '.lnk', '.url', '.msi', '.bat', '.cmd', '.ps1']);
 const DOC_EXTS = new Set(['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.txt', '.md', '.csv', '.json', '.xml', '.html', '.htm']);
@@ -90,6 +127,10 @@ async function buildIndex() {
   const start = Date.now();
   console.log('[WindowsBar] Building index...');
 
+  // Build into a fresh working set; `publishedIndex` keeps serving the previous
+  // (or cached) snapshot so search stays usable for the whole scan.
+  indexItems = [];
+
   await scanStartMenu();
   await scanSteamGames();
   await scanEpicGames();
@@ -108,6 +149,8 @@ async function buildIndex() {
     return true;
   });
 
+  publishedIndex = indexItems;
+  saveIndexCache();
   console.log(`[WindowsBar] Index ready: ${indexItems.length} items in ${Date.now() - start}ms`);
 }
 
@@ -150,9 +193,14 @@ function getWatchPaths(): string[] {
 async function reindexPath(changedPath: string) {
   console.log(`[WindowsBar] Re-indexing changed path: ${changedPath}`);
 
-  // Remove old items from this path
+  // Remove old items from this path (boundary-safe: "Downloads" must not also
+  // purge a sibling "Downloads2" / "Downloads-notes.txt").
   const changedPathLower = changedPath.toLowerCase();
-  indexItems = indexItems.filter(item => !item.path.toLowerCase().startsWith(changedPathLower));
+  const changedPrefix = changedPathLower.endsWith('\\') ? changedPathLower : changedPathLower + '\\';
+  indexItems = indexItems.filter(item => {
+    const p = item.path.toLowerCase();
+    return p !== changedPathLower && !p.startsWith(changedPrefix);
+  });
 
   // Determine type based on path
   let defaultType: 'app' | 'file' = 'file';
@@ -175,6 +223,7 @@ async function reindexPath(changedPath: string) {
   } catch (e) {
     console.error(`[WindowsBar] Error re-indexing ${changedPath}:`, e);
   }
+  publishedIndex = indexItems;
 }
 
 // Handle file system events with debouncing per path
@@ -240,7 +289,21 @@ function startBackgroundRefresh() {
   backgroundRefreshInterval = setInterval(async () => {
     console.log('[WindowsBar] Background refresh triggered');
     try {
-      // Quick re-scan of user folders only
+      // Drop existing entries under the roots we're about to re-scan — scan* only
+      // PUSH, never remove, so without this, deleted/renamed files would linger
+      // forever and the index would grow stale across refreshes.
+      const refreshRoots = [
+        ...(['desktop', 'downloads', 'documents', 'pictures', 'videos', 'music'] as const)
+          .map(p => { try { return app.getPath(p); } catch { return ''; } }).filter(Boolean),
+        join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft\\Windows\\Start Menu\\Programs'),
+        join(homedir(), 'AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs'),
+      ].map(r => r.toLowerCase());
+      indexItems = indexItems.filter(item => {
+        const p = item.path.toLowerCase();
+        return !refreshRoots.some(root => p === root || p.startsWith(root.endsWith('\\') ? root : root + '\\'));
+      });
+
+      // Re-scan those user folders + Start Menu
       await scanUserFolders();
       await scanStartMenu();
 
@@ -253,11 +316,13 @@ function startBackgroundRefresh() {
         return true;
       });
 
+      publishedIndex = indexItems;
+      saveIndexCache();
       console.log(`[WindowsBar] Background refresh complete: ${indexItems.length} items`);
     } catch (e) {
       console.error('[WindowsBar] Background refresh error:', e);
     }
-  }, 5 * 60 * 1000); // 5 minutes
+  }, 30 * 60 * 1000); // 30 minutes (fs watchers already handle real-time changes)
 }
 
 function stopBackgroundRefresh() {
@@ -589,7 +654,8 @@ function searchIndex(query: string): IndexItem[] {
   const home = homedir().toLowerCase();
   const singleTerm = terms.length === 1 ? terms[0] : null;
 
-  for (const item of indexItems) {
+  for (const item of publishedIndex) {
+    if (!item || typeof item.title !== 'string' || typeof item.path !== 'string') continue;
     const titleLower = item.title.toLowerCase();
     const isSubstring = terms.every(t => titleLower.includes(t));
     // Allow fuzzy subsequence for single-word queries (e.g. "vsc" → "Visual Studio Code")
@@ -878,6 +944,8 @@ app.whenReady().then(async () => {
     mainWindow.webContents.send('external-commands', allExternalCommands);
   }
 
+  // Serve last run's index instantly while the fresh scan runs in the background.
+  await loadIndexCache();
   buildIndex().then(() => {
     // Start file watchers after initial index is built
     startWatchers();
@@ -885,11 +953,22 @@ app.whenReady().then(async () => {
   });
   const hk = registerToggleHotkey('Alt+Space');
   console.log(hk.success ? '[WindowsBar] Global hotkey registered (Alt+Space)' : `[WindowsBar] Hotkey FAILED: ${hk.error}`);
-  app.setLoginItemSettings({ openAtLogin: true, path: app.getPath('exe') });
+  // Auto-start: ONLY manage the login item in the packaged app. In dev, app.getPath('exe')
+  // points at node_modules\electron\dist\electron.exe (with no app path), so registering it
+  // made Windows launch the bare Electron welcome window on every login. We instead remove any
+  // stale dev entry a previous `npm run dev` created (registered under the dev name "windows-bar",
+  // separate from the packaged "Windows Bar" entry, so this never touches the real autostart).
+  if (!isDev) {
+    app.setLoginItemSettings({ openAtLogin: appSettings.autoStart, path: app.getPath('exe') });
+  } else {
+    app.setLoginItemSettings({ openAtLogin: false });
+  }
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
-  // Check for updates on startup (silent background update)
-  checkForUpdates();
+  // Check for updates shortly AFTER startup (not on the cold-start path): the initial
+  // GitHub fetch + potential multi-MB download would otherwise compete with the first
+  // search for main-thread/network time.
+  setTimeout(checkForUpdates, 20_000);
 
   // Also check for updates periodically every 4 hours
   setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
@@ -914,7 +993,8 @@ ipcMain.handle('search-everything', async (_event, query: string) => {
   const allResults: Map<string, IndexItem> = new Map(); // Use Map for deduplication by path
 
   // 1. First, search the built-in index (fast, always available)
-  const localResults = searchIndex(query);
+  let localResults: IndexItem[] = [];
+  try { localResults = searchIndex(query); } catch (e) { console.error('[Unified Search] searchIndex failed:', e); }
   for (const item of localResults) {
     allResults.set(item.path.toLowerCase(), item);
   }
@@ -1097,8 +1177,6 @@ ipcMain.on('resize-window', (_event, width: number, height: number) => {
   }
 });
 
-let termProc: ChildProcess | null = null;
-
 ipcMain.handle('list-directory', async (_event, dirPath: string) => {
   try {
     let entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -1191,48 +1269,6 @@ ipcMain.handle('list-directory', async (_event, dirPath: string) => {
   } catch (e) {
     console.error('list-directory error', e);
     return [];
-  }
-});
-
-ipcMain.on('start-terminal', (event) => {
-  if (termProc) {
-    try { termProc.kill(); } catch (e) { }
-  }
-
-  termProc = spawn('cmd.exe', [], {
-    cwd: homedir(),
-    env: process.env,
-  });
-
-  termProc.stdout?.on('data', (data) => {
-    event.reply('terminal-output', data.toString());
-  });
-
-  termProc.stderr?.on('data', (data) => {
-    event.reply('terminal-output', data.toString());
-  });
-
-  termProc.on('close', () => {
-    event.reply('terminal-output', '\r\n[Process exited]\r\n');
-  });
-
-  setTimeout(() => {
-    if (termProc && termProc.stdin) {
-      termProc.stdin.write('gemini\r\n');
-    }
-  }, 600);
-});
-
-ipcMain.on('terminal-input', (_event, data: string) => {
-  if (termProc && termProc.stdin) {
-    termProc.stdin.write(data);
-  }
-});
-
-ipcMain.on('stop-terminal', () => {
-  if (termProc) {
-    try { termProc.kill(); } catch (e) { }
-    termProc = null;
   }
 });
 
@@ -1403,8 +1439,9 @@ ipcMain.handle('kill-process', async (_event, processName: string) => {
       return { success: false, error: 'Invalid process name' };
     }
 
-    // Sanitize input - only allow alphanumeric and some safe chars
-    const safeName = processName.replace(/[^a-zA-Z0-9_.-]/g, '');
+    // Sanitize input — strip a trailing ".exe" the user may have typed (so "chrome.exe"
+    // does not become "chrome.exe.exe" and silently match nothing), then allow only safe chars.
+    const safeName = processName.replace(/\.exe$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '');
 
     if (safeName.length < 2) {
       return { success: false, error: 'Invalid process name after sanitization' };
@@ -1444,6 +1481,49 @@ ipcMain.handle('list-processes', async () => {
     return processes;
   } catch (e) {
     console.error('list-processes error:', e);
+    return [];
+  }
+});
+
+// System uptime + last boot time
+ipcMain.handle('get-uptime', () => {
+  const uptimeSec = require('os').uptime();
+  return { uptimeSec, bootTime: Date.now() - uptimeSec * 1000 };
+});
+
+// Listening TCP ports + owning process (netstat -ano joined with tasklist PID→name)
+ipcMain.handle('list-ports', async () => {
+  try {
+    const netstatOut = await new Promise<string>((resolve) => {
+      execFile('netstat', ['-ano', '-p', 'TCP'], { timeout: 8000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+        (_e, stdout) => resolve((stdout || '').toString()));
+    });
+    const pidName = new Map<string, string>();
+    try {
+      const tasks = execSync('tasklist /fo csv /nh', { encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024 });
+      for (const line of tasks.split(/\r?\n/)) {
+        const m = line.match(/^"([^"]+)","(\d+)"/);
+        if (m) pidName.set(m[2], m[1]);
+      }
+    } catch { /* tasklist is optional enrichment */ }
+    const seen = new Set<string>();
+    const ports: { port: number; pid: string; process: string; address: string }[] = [];
+    for (const line of netstatOut.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 5 && parts[0] === 'TCP' && parts[3] === 'LISTENING') {
+        const portMatch = parts[1].match(/:(\d+)$/);
+        if (!portMatch) continue;
+        const pid = parts[4];
+        const key = `${portMatch[1]}-${pid}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        ports.push({ port: parseInt(portMatch[1], 10), pid, process: pidName.get(pid) || `PID ${pid}`, address: parts[1] });
+      }
+    }
+    ports.sort((a, b) => a.port - b.port);
+    return ports.slice(0, 50);
+  } catch (e) {
+    console.error('list-ports error:', e);
     return [];
   }
 });
@@ -1720,10 +1800,12 @@ function getCredentialPath(): string {
 
 async function loadCredentials(): Promise<Record<string, string>> {
   try {
-    const raw = await fs.readFile(getCredentialPath(), 'utf-8');
-    if (!safeStorage.isEncryptionAvailable()) return JSON.parse(raw);
-    const decrypted = safeStorage.decryptString(Buffer.from(raw, 'utf-8'));
-    return JSON.parse(decrypted);
+    // Read as a Buffer — the encrypted blob is raw binary. Reading it as 'utf-8'
+    // and re-encoding via Buffer.from(str,'utf-8') is lossy and corrupts the
+    // ciphertext, which silently wiped every saved AI key on the next launch.
+    const raw = await fs.readFile(getCredentialPath());
+    if (!safeStorage.isEncryptionAvailable()) return JSON.parse(raw.toString('utf-8'));
+    return JSON.parse(safeStorage.decryptString(raw));
   } catch {
     return {};
   }
@@ -1840,13 +1922,18 @@ ipcMain.handle('ai:chat', async (event, request: {
         const decoder = new TextDecoder();
         let fullContent = '';
 
+        let sseBuffer = '';
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split('\n');
+            // Keep the trailing partial line buffered — a `data: {...}` JSON object
+            // can be split across two read() chunks; splitting per-chunk would drop
+            // it and lose tokens from the streamed answer.
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() ?? '';
 
             for (const line of lines) {
               if (!line.startsWith('data: ')) continue;

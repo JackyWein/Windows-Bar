@@ -326,6 +326,30 @@ const calcCommands: readonly Command[] = [
     },
     enabled: true,
   },
+  {
+    id: 'roll',
+    trigger: '/roll',
+    description: 'Würfeln (z.B. 2d6, d20, 4d8+2)',
+    usage: 'z.B. /roll 2d6  •  /roll d20  •  /roll 4d8+2',
+    icon: 'dices',
+    category: 'calc',
+    handler(args: string) {
+      const spec = (args.trim() || 'd6').toLowerCase().replace(/\s+/g, '');
+      const m = spec.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+      if (!m) return { results: [{ id: 'cmd-err', title: 'Ungültige Würfel', subtitle: 'z.B. /roll 2d6, /roll d20', type: 'system' }] };
+      const count = Math.min(100, Math.max(1, parseInt(m[1] || '1', 10)));
+      const sides = Math.min(1000, Math.max(2, parseInt(m[2], 10)));
+      const mod = m[3] ? parseInt(m[3], 10) : 0;
+      const rolls: number[] = [];
+      for (let i = 0; i < count; i++) rolls.push(1 + Math.floor(Math.random() * sides));
+      const sum = rolls.reduce((a, b) => a + b, 0) + mod;
+      const detail = (count > 1 || mod) ? `${rolls.join(' + ')}${mod ? (mod > 0 ? ` + ${mod}` : ` − ${Math.abs(mod)}`) : ''}` : '';
+      return {
+        results: [{ id: 'cmd-roll', title: `🎲 ${sum}`, subtitle: `${count}d${sides}${m[3] || ''}${detail ? ` → ${detail}` : ''}`, type: 'calc', path: String(sum), copyToClipboard: String(sum) }],
+      };
+    },
+    enabled: true,
+  },
 ];
 
 export default calcCommands;

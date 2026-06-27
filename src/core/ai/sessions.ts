@@ -11,7 +11,7 @@ const MAX_SESSIONS = 50;
 /**
  * Manages persistence of chat sessions in localStorage.
  */
-export class SessionStore {
+class SessionStore {
   private sessions: Map<string, ChatSession> = new Map();
 
   constructor() {

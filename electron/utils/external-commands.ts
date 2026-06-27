@@ -10,13 +10,13 @@ export interface ExternalCommandFile {
 }
 
 // Get the external commands directory path
-export function getCommandsDir(): string {
+function getCommandsDir(): string {
   const appData = app.getPath('userData');
   return join(appData, 'commands');
 }
 
 // Ensure the commands directory exists
-export async function ensureCommandsDir(): Promise<string> {
+async function ensureCommandsDir(): Promise<string> {
   const dir = getCommandsDir();
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -91,25 +91,6 @@ export async function loadExternalCommands(): Promise<ExternalCommandFile[]> {
     }
   } catch (error) {
     console.error('[ExternalCommands] Failed to read commands directory:', error);
-  }
-
-  return results;
-}
-
-// Get list of external command files (without loading them)
-export async function listExternalCommandFiles(): Promise<{ file: string; error?: string }[]> {
-  const dir = await ensureCommandsDir();
-  const results: { file: string; error?: string }[] = [];
-
-  try {
-    const files = await fs.readdir(dir);
-    const jsFiles = files.filter(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.cjs'));
-
-    for (const file of jsFiles) {
-      results.push({ file });
-    }
-  } catch (error) {
-    console.error('[ExternalCommands] Failed to list command files:', error);
   }
 
   return results;

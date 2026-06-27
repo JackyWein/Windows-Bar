@@ -9,13 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchEverything: (query: string) => ipcRenderer.invoke('search-everything', query),
   fetchInstantAnswer: (query: string) => ipcRenderer.invoke('fetch-instant-answer', query),
 
-  // Legacy terminal (kept for backward compat, will be removed)
-  startTerminal: () => ipcRenderer.send('start-terminal'),
-  stopTerminal: () => ipcRenderer.send('stop-terminal'),
-  sendTerminalInput: (data: string) => ipcRenderer.send('terminal-input', data),
-  onTerminalOutput: (callback: (data: string) => void) => {
-    ipcRenderer.on('terminal-output', (_event, data) => callback(data));
-  },
   listDirectory: (path: string) => ipcRenderer.invoke('list-directory', path),
   getFileIcon: (path: string) => ipcRenderer.invoke('get-file-icon', path),
 
@@ -31,6 +24,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   killProcess: (name: string) => ipcRenderer.invoke('kill-process', name),
   listProcesses: () => ipcRenderer.invoke('list-processes'),
+  getUptime: () => ipcRenderer.invoke('get-uptime'),
+  listPorts: () => ipcRenderer.invoke('list-ports'),
   readClipboard: () => ipcRenderer.invoke('read-clipboard'),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
 
@@ -74,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSystemThemeChange: (callback: (theme: 'light' | 'dark') => void) => {
     ipcRenderer.on('system-theme-changed', (_event, theme) => callback(theme));
   },
+  removeSystemThemeListeners: () => ipcRenderer.removeAllListeners('system-theme-changed'),
 
   // AI Chat
   aiChat: (request: unknown) => ipcRenderer.invoke('ai:chat', request),
@@ -155,6 +151,7 @@ contextBridge.exposeInMainWorld('pluginAPI', {
   onPluginSettingsUpdated: (callback: (data: { pluginId: string; settings: Record<string, unknown> }) => void) => {
     ipcRenderer.on('plugin:settings-updated', (_event, data) => callback(data));
   },
+  removePluginSettingsListeners: () => ipcRenderer.removeAllListeners('plugin:settings-updated'),
   onPluginNavigate: (callback: (data: { pluginId: string; view: string }) => void) => {
     ipcRenderer.on('plugin:navigate', (_event, data) => callback(data));
   },

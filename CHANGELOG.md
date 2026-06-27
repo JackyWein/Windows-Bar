@@ -1,6 +1,42 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.1.3] - 2026-06-28
+
+**🧰 Aufräum-, Stabilitäts- & Feature-Update — schneller, robuster, hübscher**
+
+### 🎨 Neuer `/help` & passende Icons
+* **`/help` (bzw. `/`) komplett überarbeitet:** Befehle werden jetzt in sauberen Reihen mit **Icon, Befehl und Beschreibung** angezeigt, gruppiert nach Kategorie mit eigenem Kategorie-Icon.
+* **Jeder Befehl hat ein passendes Icon** statt eines generischen Platzhalters — `/calc` ein Taschenrechner, `/lock` ein Schloss, `/speedtest` ein Tacho, `/ports` ein Netzwerk-Symbol, `/volume` ein Lautsprecher, `/kill` ein Totenkopf usw. (vorher zeigten z.B. alle System-Befehle dasselbe — teils falsche — Symbol).
+
+### 🔌 Neues Plugin: Timer & Pomodoro
+* **`/timer 25m Deep Work`** — Countdown mit Windows-Benachrichtigung bei Ablauf. `/timer` ohne Argument listet laufende Timer (Enter bricht ab).
+* **`/pomodoro`** — zyklischer Fokus-Timer (Arbeit → Pause → Arbeit), Längen einstellbar.
+* **`/timers-clear`** — alle abbrechen. Übersteht App-Neustart (laufende Timer werden wiederhergestellt). Komplett offline.
+
+### ✨ Neue Befehle
+* **`/uptime`** (`/boot`) — Systemlaufzeit & letzter Start.
+* **`/ports`** (`/netstat`) — lauschende TCP-Ports samt zugehörigem Prozess (`/ports 3000`, `/ports node`).
+* **`/case`** — Text in alle Schreibweisen (camelCase, snake_case, kebab-case, CONSTANT_CASE …), jede kopierbar.
+* **`/roll`** — Würfeln (`/roll 2d6`, `/roll d20`, `/roll 4d8+2`).
+
+### ⚡ Performance
+* **Deutlich schnellerer Kaltstart:** Der Datei-Index wird gespeichert und beim Start sofort geladen — die erste Suche ist instant, statt auf den vollständigen Laufwerks-Scan zu warten.
+* **Flüssigere Suche:** Die „Läuft Everything?"-Prüfung wird nicht mehr bei jedem Tastendruck ausgeführt (blockierte den Hauptprozess), sondern kurz zwischengespeichert.
+* **Schnellerer erster Aufbau:** schwere Ansichten (Einstellungen, KI, Notizen, Player) werden erst bei Bedarf geladen; der Update-Check startet kurz verzögert, statt mit der ersten Suche zu konkurrieren.
+
+### 🐛 Behobene Fehler
+* **Standard-Electron-Fenster beim PC-Start behoben** — der Autostart-Eintrag zeigte (durch den Entwickler-Modus) auf ein leeres Electron statt auf die App.
+* **Scroll-Problem behoben:** In Einstellungen, Notizen und langen Suchergebnis-Listen ließ sich nicht bis nach ganz unten scrollen — die Panels ragten unsichtbar aus dem Fenster.
+* **KI-Schlüssel gingen beim Neustart verloren** — gespeicherte API-Keys wurden beim Lesen beschädigt; bleiben jetzt erhalten.
+* **KI-Antworten verloren gelegentlich Wörter** beim Streaming (über zwei Datenpakete getrennte Teile) — behoben.
+* **Möglicher Weißbild-Absturz** bei beschädigten/älteren Einstellungen oder einem fehlerhaften Index-Cache abgefangen; eine fehlgeschlagene Ansicht zeigt jetzt einen „Neu laden"-Hinweis statt eines weißen Fensters.
+* `/kill chrome.exe` traf nichts mehr (wurde zu `chrome.exe.exe`) — korrigiert.
+* Diverse kleinere Lecks, Race-Conditions und Datei-Index-Ungenauigkeiten (veraltete/gelöschte Einträge) bereinigt.
+
+### 🧹 Unter der Haube
+* Toter Code, ungenutzte Abhängigkeiten und ein versteckter, kaputter „Terminal"-Pfad entfernt; Architektur-Dokumentation (`AGENTS.md`) für beide Projekte ergänzt.
+
 ## [1.1.1] - 2026-06-25
 
 **🎵 Media-Player-Plugin-Unterstützung & YouTube Music**

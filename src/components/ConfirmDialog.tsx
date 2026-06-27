@@ -14,7 +14,7 @@ interface ConfirmDialogProps {
   readonly onCancel: () => void;
 }
 
-export function ConfirmDialog({ options, onConfirm, onCancel }: ConfirmDialogProps) {
+function ConfirmDialog({ options, onConfirm, onCancel }: ConfirmDialogProps) {
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   const [selected, setSelected] = useState<'cancel' | 'confirm'>('cancel');
 

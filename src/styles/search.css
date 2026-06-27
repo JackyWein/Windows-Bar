@@ -288,10 +288,19 @@
 .cmd-category-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 7px;
   padding: 12px 14px 4px;
   pointer-events: none;
 }
+
+.cmd-category-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  opacity: 0.9;
+}
+.cmd-category-icon svg { width: 13px; height: 13px; }
 
 .cmd-category-label {
   font-size: 0.625rem;
@@ -306,6 +315,7 @@
   font-size: 0.625rem;
   color: var(--text-dim);
   opacity: 0.5;
+  margin-left: auto;
 }
 
 /* Command browser: command items */
@@ -317,10 +327,15 @@
 .result-item.cmd-item .cmd-trigger {
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 13px;
+  font-weight: 600;
   color: var(--accent);
   white-space: nowrap;
-  min-width: 90px;
-  flex-shrink: 0;
+  display: block;
+}
+
+.result-icon.cmd-icon {
+  width: 30px;
+  height: 30px;
 }
 
 .result-item.cmd-item .result-content {
@@ -634,20 +649,6 @@
   background: #0f0f14;
   border-radius: 0 0 var(--radius) var(--radius);
   overflow: hidden;
-}
-
-.xterm-wrapper {
-  flex: 1;
-  padding: 12px 16px;
-  overflow: hidden;
-}
-
-.xterm-wrapper .xterm {
-  padding: 4px;
-}
-
-.xterm-wrapper .xterm-viewport {
-  border-radius: 4px;
 }
 
 .terminal-input-bar {

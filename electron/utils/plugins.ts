@@ -40,11 +40,11 @@ export interface PluginInfo {
 const pluginsDir = join(app.getPath('userData'), 'plugins');
 const loadedPlugins = new Map<string, any>();
 const pluginActions = new Map<string, Map<string, Function>>();
-export const pluginCommandHandlers = new Map<string, Map<string, Function>>();
-export const pluginSearchProviders = new Map<string, Map<string, Function>>();
+const pluginCommandHandlers = new Map<string, Map<string, Function>>();
+const pluginSearchProviders = new Map<string, Map<string, Function>>();
 
 // Ensure plugins directory exists
-export async function ensurePluginsDir(): Promise<string> {
+async function ensurePluginsDir(): Promise<string> {
   await fs.mkdir(pluginsDir, { recursive: true });
   return pluginsDir;
 }
@@ -55,13 +55,13 @@ function isValidPluginId(id: unknown): id is string {
 }
 
 // Get plugin directory
-export function getPluginDir(pluginId: string): string {
+function getPluginDir(pluginId: string): string {
   if (!isValidPluginId(pluginId)) throw new Error(`Ungültige Plugin-ID: ${pluginId}`);
   return join(pluginsDir, pluginId);
 }
 
 // List all installed plugins
-export async function listPlugins(): Promise<PluginInfo[]> {
+async function listPlugins(): Promise<PluginInfo[]> {
   await ensurePluginsDir();
   const plugins: PluginInfo[] = [];
 
@@ -105,7 +105,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
 }
 
 // Install plugin from local path (ZIP or folder)
-export async function installPlugin(source: string): Promise<PluginInfo | null> {
+async function installPlugin(source: string): Promise<PluginInfo | null> {
   await ensurePluginsDir();
 
   try {
@@ -150,7 +150,7 @@ export async function installPlugin(source: string): Promise<PluginInfo | null> 
 }
 
 // Uninstall plugin
-export async function uninstallPlugin(pluginId: string): Promise<boolean> {
+async function uninstallPlugin(pluginId: string): Promise<boolean> {
   try {
     const pluginDir = getPluginDir(pluginId);
     await fs.rm(pluginDir, { recursive: true, force: true });
@@ -167,7 +167,7 @@ export async function uninstallPlugin(pluginId: string): Promise<boolean> {
 }
 
 // Load a single plugin
-export async function loadPlugin(pluginId: string): Promise<boolean> {
+async function loadPlugin(pluginId: string): Promise<boolean> {
   try {
     const pluginDir = getPluginDir(pluginId);
     const manifestPath = join(pluginDir, 'manifest.json');
@@ -264,7 +264,7 @@ export async function loadAllPlugins() {
 }
 
 // Toggle enabled state of a plugin
-export async function togglePlugin(pluginId: string, enabled: boolean): Promise<boolean> {
+async function togglePlugin(pluginId: string, enabled: boolean): Promise<boolean> {
   try {
     const win = BrowserWindow.getAllWindows()[0];
 
@@ -292,48 +292,7 @@ export async function togglePlugin(pluginId: string, enabled: boolean): Promise<
   }
 }
 
-// Get plugin settings
-export async function getPluginSettings(pluginId: string): Promise<Record<string, any>> {
-  const settingsPath = join(getPluginDir(pluginId), 'settings.json');
-  try {
-    return JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-// Update plugin settings
-export async function updatePluginSettings(pluginId: string, settings: Record<string, any>): Promise<boolean> {
-  try {
-    const settingsPath = join(getPluginDir(pluginId), 'settings.json');
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
-
-    const plugin = loadedPlugins.get(pluginId);
-    if (plugin) {
-      plugin.settings = settings;
-    }
-
-    const win = BrowserWindow.getAllWindows()[0];
-    win?.webContents.send('plugin:settings-updated', { pluginId, settings });
-
-    return true;
-  } catch (err) {
-    console.error(`[Plugins] Failed to update settings for ${pluginId}:`, err);
-    return false;
-  }
-}
-
-// Get plugin manifest
-export async function getPluginManifest(pluginId: string): Promise<any | null> {
-  try {
-    const manifestPath = join(getPluginDir(pluginId), 'manifest.json');
-    return JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
-export const resultActionMap = new Map<string, Function>();
+const resultActionMap = new Map<string, Function>();
 
 // Helper to strip non-serializable properties from objects, mapping functions to IPC action IDs
 function stripNonSerializable(obj: any, keepHandler = false): any {
@@ -341,6 +300,13 @@ function stripNonSerializable(obj: any, keepHandler = false): any {
   if (typeof obj === 'function') {
     const actionId = `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     resultActionMap.set(actionId, obj);
+    // Bound the map — these action IDs are never explicitly freed, so without a cap
+    // a long session with active plugins (search providers re-emit results constantly)
+    // leaks memory unboundedly.
+    if (resultActionMap.size > 2000) {
+      const oldest = resultActionMap.keys().next().value;
+      if (oldest !== undefined) resultActionMap.delete(oldest);
+    }
     return { __plugin_action_id: actionId };
   }
   if (typeof obj === 'object') {

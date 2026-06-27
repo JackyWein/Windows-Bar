@@ -1,12 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from "react";
+import type { ReactNode } from "react";
 import type { AppSettings, ViewMode } from "./types";
 import { defaultSettings } from "./types";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { SearchView } from "./views/SearchView";
-import { SettingsView } from "./views/SettingsView";
-import { AiView } from "./views/AiView";
-import { NotesView } from "./views/NotesView";
-import { MediaPanel } from "./components/MediaPanel";
 import type { MediaPanelConfig } from "./components/MediaPanel";
 import { mediaBus } from "./core/media/mediaBus";
 import { registerBuiltinCommands } from "./core/commands/builtin";
@@ -17,6 +14,14 @@ import type { Theme } from "./types";
 import type { AISettings, ProviderConfig } from "./core/ai";
 import { useConfirm } from "./components/ConfirmDialog";
 import "./index.css";
+
+// Heavy panels are code-split so the initial bundle only contains what's needed to
+// paint the search box; Vite splits each dynamic import into its own chunk that loads
+// the first time the view is opened.
+const SettingsView = lazy(() => import("./views/SettingsView").then((m) => ({ default: m.SettingsView })));
+const AiView = lazy(() => import("./views/AiView").then((m) => ({ default: m.AiView })));
+const NotesView = lazy(() => import("./views/NotesView").then((m) => ({ default: m.NotesView })));
+const MediaPanel = lazy(() => import("./components/MediaPanel").then((m) => ({ default: m.MediaPanel })));
 
 // Initialize command registry on app load
 registerBuiltinCommands();
@@ -159,12 +164,50 @@ function dimColor(color: string, alpha: number): string {
   return trimmed;
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+// Deep-merge persisted settings over defaults so a partial/older saved object never
+// leaves a nested field (e.g. appearance.blur.enabled) undefined — that used to throw
+// inside applyAllAppearance and white-screen the whole app.
+function deepMerge<T>(base: T, override: unknown): T {
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return (override === undefined ? base : override) as T;
+  }
+  const out: Record<string, unknown> = { ...base };
+  for (const k of Object.keys(override)) {
+    out[k] = deepMerge((base as Record<string, unknown>)[k], (override as Record<string, unknown>)[k]);
+  }
+  return out as T;
+}
+
+// Recovers from a failed lazy-chunk load (e.g. a stale index.html after an auto-update
+// references a renamed chunk, or AV quarantine) instead of unmounting to a white screen.
+class ViewErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(err: unknown) { console.error("[WindowsBar] View failed to load:", err); }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="app-container">
+          <div className="search-glass" style={{ padding: 24, textAlign: "center", display: "flex", flexDirection: "column", gap: 12 }}>
+            <span>Ansicht konnte nicht geladen werden.</span>
+            <button className="settings-btn" onClick={() => location.reload()}>Neu laden</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem("windowsbar_settings");
     if (saved) {
       try {
-        return { ...defaultSettings, ...JSON.parse(saved) };
+        return deepMerge(defaultSettings, JSON.parse(saved));
       } catch {
         return defaultSettings;
       }
@@ -227,7 +270,11 @@ function App() {
       }
     }
     const toSave = { ...settings, ai: { ...settings.ai, providers: safeProviders } };
-    localStorage.setItem("windowsbar_settings", JSON.stringify(toSave));
+    try {
+      localStorage.setItem("windowsbar_settings", JSON.stringify(toSave));
+    } catch (e) {
+      console.error("[WindowsBar] Failed to persist settings:", e);
+    }
   }, [settings]);
 
   // Hydrate AI API keys from the encrypted keychain on startup.
@@ -330,7 +377,11 @@ function App() {
     const onFocus = () => detectMedia();
     window.addEventListener("focus", onFocus);
     window.pluginAPI?.onPluginSettingsUpdated?.(() => detectMedia());
-    return () => { clearTimeout(t); window.removeEventListener("focus", onFocus); };
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("focus", onFocus);
+      window.pluginAPI?.removePluginSettingsListeners?.();
+    };
   }, [detectMedia]);
 
   // Poll the active media plugin for now-playing state (drives the compact bar).
@@ -382,6 +433,7 @@ function App() {
     };
     window.electronAPI?.getSystemTheme?.().then(apply).catch(() => {});
     window.electronAPI?.onSystemThemeChange?.(apply);
+    return () => { window.electronAPI?.removeSystemThemeListeners?.(); };
   }, [settings.appearance.autoTheme]);
 
   const updateSetting = useCallback(
@@ -411,14 +463,14 @@ function App() {
     }
   };
 
-  const backToSearch = () => {
+  const backToSearch = useCallback(() => {
     setViewMode("search");
     try {
       window.electronAPI.resizeWindow(widthRef.current, 600);
     } catch {
       /* ignore */
     }
-  };
+  }, []);
 
   // Global Escape handler: go back to search from any view (but not when modals are open)
   useEffect(() => {
@@ -491,6 +543,8 @@ function App() {
       settings={settings}
       onThemeChange={(themeId) => updateSetting("appearance", "theme", themeId)}
     >
+      <ViewErrorBoundary>
+      <Suspense fallback={null}>
       {viewMode === "ai" && (
         <AiView
           settings={settings.ai}
@@ -531,6 +585,8 @@ function App() {
           showMediaBar={showMediaBar}
         />
       )}
+      </Suspense>
+      </ViewErrorBoundary>
       {confirmDialog}
     </ThemeProvider>
   );

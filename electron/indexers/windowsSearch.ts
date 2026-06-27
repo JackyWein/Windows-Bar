@@ -15,7 +15,10 @@ export async function searchWithWindowsIndex(query: string, maxResults: number =
     try {
         // Use Windows Search via PowerShell with Get-ChildItem for comprehensive search
         // This searches ALL files, not just indexed ones
-        const escapedQuery = query.replace(/'/g, "''").replace(/"/g, '`"');
+        const escapedQuery = query
+            .replace(/'/g, "''")
+            .replace(/"/g, '`"')
+            .replace(/[[%_]/g, m => '[' + m + ']'); // escape SQL LIKE wildcards (%, _, [)
 
         // Method 1: Try Windows Search Indexer first (faster but only indexed locations)
         const indexerQuery = `
@@ -185,38 +188,4 @@ async function searchWithDirectScan(query: string, maxResults: number): Promise<
 
     console.log(`[Direct Scan] Found ${items.length} results for "${query}"`);
     return items;
-}
-
-// Quick search using where command (Windows built-in)
-export async function searchWithWhere(query: string, maxResults: number = 20): Promise<IndexItem[]> {
-    if (!query?.trim()) return [];
-
-    try {
-        // Use 'where' command for executable search
-        const result = execSync(`where /r C:\\ *${query}* 2>nul`, {
-            encoding: 'utf-8',
-            timeout: 15000,
-            maxBuffer: 1024 * 1024 * 2
-        });
-
-        const items: IndexItem[] = [];
-        const lines = result.trim().split('\n').filter(l => l.trim());
-
-        for (const line of lines.slice(0, maxResults)) {
-            const path = line.trim();
-            const fileName = path.split('\\').pop() || path;
-
-            items.push({
-                title: fileName,
-                path,
-                type: 'file',
-                priority: 5,
-                iconPath: path
-            });
-        }
-
-        return items;
-    } catch {
-        return [];
-    }
 }

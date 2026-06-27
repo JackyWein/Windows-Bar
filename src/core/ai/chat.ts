@@ -2,18 +2,12 @@
 // Chat Engine
 // ========================
 
-import type { ChatMessage, ChunkCallback, AIRequest, AIResult } from './types';
+import type { ChatMessage, AIRequest } from './types';
 import { generateId } from './types';
 import type { ProviderConfig } from './types';
 import { providerRegistry } from './providers';
 
-export type ChatState = 'idle' | 'streaming' | 'error';
-
-export interface ChatEngineCallbacks {
-  readonly onChunk: ChunkCallback;
-  readonly onComplete: (result: AIResult) => void;
-  readonly onError: (error: Error) => void;
-}
+type ChatState = 'idle' | 'streaming' | 'error';
 
 /**
  * Manages a single chat conversation.

@@ -2,14 +2,9 @@
 import { app, shell } from 'electron';
 import { promises as fs } from 'fs';
 import { dirname, resolve } from 'path';
-import { execSync } from 'child_process';
-
-const iconCache = new Map<string, string>();
-
-export { iconCache };
 
 // Read image files directly as base64
-export async function readImageFileAsBase64(imgPath: string): Promise<string | null> {
+async function readImageFileAsBase64(imgPath: string): Promise<string | null> {
     try {
         await fs.access(imgPath);
         const buffer = await fs.readFile(imgPath);
@@ -24,7 +19,7 @@ export async function readImageFileAsBase64(imgPath: string): Promise<string | n
 }
 
 // Check if a file path exists and is accessible
-export async function fileExists(filePath: string): Promise<boolean> {
+async function fileExists(filePath: string): Promise<boolean> {
     try {
         await fs.access(filePath);
         return true;
@@ -135,20 +130,5 @@ export async function tryGetIconWithRetry(targetPath: string, retries = 2): Prom
         }
     } catch { /* ignore */ }
 
-    return null;
-}
-
-// Get Steam path
-export function getSteamPath(): string | null {
-    try {
-        const out = execSync('reg query HKCU\\Software\\Valve\\Steam /v SteamPath').toString();
-        const match = out.match(/SteamPath\s+REG_SZ\s+(.+)/);
-        if (match) return match[1].trim().replace(/\//g, '\\');
-    } catch { }
-
-    const fallbacks = ['C:\\Program Files (x86)\\Steam', 'C:\\Program Files\\Steam', 'D:\\Steam', 'E:\\Steam'];
-    for (const f of fallbacks) {
-        try { if (require('fs').existsSync(f)) return f; } catch { }
-    }
     return null;
 }

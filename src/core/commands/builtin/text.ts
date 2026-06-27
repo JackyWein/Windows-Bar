@@ -249,6 +249,31 @@ const textCommands: readonly Command[] = [
     },
     enabled: true,
   },
+  {
+    id: 'case',
+    trigger: '/case ',
+    description: 'Text in Schreibweisen umwandeln (camelCase, snake_case …)',
+    usage: 'z.B. /case hallo welt',
+    icon: 'type',
+    category: 'text',
+    handler(args: string) {
+      const t = args.trim();
+      if (!t) return { results: [{ id: 'cmd-err', title: 'Kein Text', subtitle: '/case hallo welt', type: 'system' }] };
+      const words = t.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').trim().split(/\s+/).filter(Boolean).map(w => w.toLowerCase());
+      const variants: { label: string; value: string }[] = [
+        { label: 'GROSSBUCHSTABEN', value: t.toUpperCase() },
+        { label: 'kleinbuchstaben', value: t.toLowerCase() },
+        { label: 'Title Case', value: words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') },
+        { label: 'camelCase', value: words.map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)).join('') },
+        { label: 'PascalCase', value: words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') },
+        { label: 'snake_case', value: words.join('_') },
+        { label: 'kebab-case', value: words.join('-') },
+        { label: 'CONSTANT_CASE', value: words.join('_').toUpperCase() },
+      ];
+      return { results: variants.map((v, i) => ({ id: `case-${i}`, title: v.value || '—', subtitle: v.label, type: 'calc', path: v.value, copyToClipboard: v.value })) };
+    },
+    enabled: true,
+  },
 ];
 
 export default textCommands;

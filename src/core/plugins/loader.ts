@@ -189,14 +189,6 @@ function getOrCreatePluginState(pluginId: string): PluginState {
   return pluginStates.get(pluginId)!;
 }
 
-export function getPluginState(pluginId: string): PluginState | undefined {
-  return pluginStates.get(pluginId);
-}
-
-export function getAllPluginStates(): PluginState[] {
-  return Array.from(pluginStates.values());
-}
-
 export async function searchWithPlugins(query: string): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
 

@@ -55,7 +55,11 @@ export const mediaBus = {
     controller = c;
   },
   control(action: string, value?: number): void {
-    controller?.(action, value);
+    // Only flip optimistic state if the action was actually delivered — a click
+    // during a plugin switch (controller momentarily null) would otherwise desync
+    // the UI until the next poll.
+    if (!controller) return;
+    controller(action, value);
     // Optimistic UI for instant feedback; the next poll reconciles with reality.
     if (action === 'playpause') {
       state = { ...state, isPlaying: !state.isPlaying };

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { Theme, AppSettings } from '../types';
 import { builtinThemes, getThemeById, applyTheme } from '../core/settings/themes';
 
@@ -69,16 +69,4 @@ export function ThemeProvider({ children, settings, onThemeChange }: ThemeProvid
       {children}
     </ThemeContext.Provider>
   );
-}
-
-// ========================
-// Hook
-// ========================
-
-export function useTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext);
-  if (ctx === null) {
-    throw new Error('useTheme must be used within a <ThemeProvider>');
-  }
-  return ctx;
 }

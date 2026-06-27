@@ -17,18 +17,6 @@ export interface ChatMessage {
   readonly timestamp: number;
 }
 
-/** Callback for streaming chunks */
-export type ChunkCallback = (chunk: string) => void;
-
-/** Result from a chat completion */
-export interface AIResult {
-  readonly content: string;
-  readonly usage?: {
-    readonly inputTokens: number;
-    readonly outputTokens: number;
-  };
-}
-
 /** Provider type classification */
 export type ProviderType = 'api' | 'cli';
 
@@ -95,13 +83,6 @@ export interface AISettings {
   readonly setupComplete: boolean;
   readonly providers: Readonly<Record<string, ProviderConfig>>;
 }
-
-export const DEFAULT_AI_SETTINGS: AISettings = {
-  defaultProvider: null,
-  defaultModel: null,
-  setupComplete: false,
-  providers: {},
-} as const;
 
 /** Generate a simple ID for messages and sessions */
 export function generateId(): string {

@@ -12,41 +12,34 @@ import { execSync } from 'child_process';
 import { promises as fs } from 'fs';
 import type { IndexItem } from './types';
 
-// Check if Everything is running
+// Check if Everything is running.
+// Cached for a short TTL: the search handler calls this on (nearly) every keystroke,
+// and the underlying `tasklist` is a synchronous, main-thread-blocking process spawn
+// (~50-200ms). Probing once per ~30s instead keeps search input snappy.
+let everythingRunningCache: { value: boolean; ts: number } | null = null;
+const EVERYTHING_PROBE_TTL_MS = 30_000;
+
 export function isEverythingRunning(): boolean {
+    if (everythingRunningCache && Date.now() - everythingRunningCache.ts < EVERYTHING_PROBE_TTL_MS) {
+        return everythingRunningCache.value;
+    }
+    let value = false;
     try {
         const result = execSync('tasklist /fi "imagename eq everything.exe" /nh', {
             encoding: 'utf-8',
             timeout: 2000
         });
-        return result.toLowerCase().includes('everything.exe');
+        value = result.toLowerCase().includes('everything.exe');
     } catch {
-        return false;
+        value = false;
     }
-}
-
-// Check if Everything is installed (common paths)
-export async function findEverythingPath(): Promise<string | null> {
-    const commonPaths = [
-        'C:\\Program Files\\Everything\\everything.exe',
-        'C:\\Program Files (x86)\\Everything\\everything.exe',
-        'D:\\Program Files\\Everything\\everything.exe',
-        `${process.env.LOCALAPPDATA}\\Everything\\everything.exe`,
-        `${process.env.PROGRAMFILES}\\Everything\\everything.exe`,
-    ];
-
-    for (const p of commonPaths) {
-        try {
-            await fs.access(p);
-            return p;
-        } catch { /* ignore - path doesn't exist */ }
-    }
-    return null;
+    everythingRunningCache = { value, ts: Date.now() };
+    return value;
 }
 
 // Search using Everything command-line interface (es.exe)
 // This is the most reliable method
-export async function searchWithEverything(query: string, maxResults: number = 50): Promise<IndexItem[]> {
+async function searchWithEverything(query: string, maxResults: number = 50): Promise<IndexItem[]> {
     if (!query?.trim()) return [];
 
     // Find es.exe (Everything command-line)
@@ -100,16 +93,18 @@ export async function searchWithEverything(query: string, maxResults: number = 5
 
                 let type: 'app' | 'file' | 'folder' | 'game' = isDir ? 'folder' : 'file';
 
-                // Detect type based on extension
+                // Detect type based on extension — check game paths BEFORE the generic
+                // .exe→app rule, otherwise every game exe is mis-typed as a plain app.
                 if (!isDir) {
-                    if (['.exe', '.lnk', '.url', '.msi', '.bat', '.cmd', '.ps1'].includes(ext)) {
-                        type = 'app';
-                    } else if (ext === '.exe' && (
-                        trimmedLine.toLowerCase().includes('steam\\steamapps\\common') ||
-                        trimmedLine.toLowerCase().includes('epic games') ||
-                        trimmedLine.toLowerCase().includes('riot games')
+                    const lower = trimmedLine.toLowerCase();
+                    if (ext === '.exe' && (
+                        lower.includes('steam\\steamapps\\common') ||
+                        lower.includes('epic games') ||
+                        lower.includes('riot games')
                     )) {
                         type = 'game';
+                    } else if (['.exe', '.lnk', '.url', '.msi', '.bat', '.cmd', '.ps1'].includes(ext)) {
+                        type = 'app';
                     }
                 }
 
@@ -142,7 +137,7 @@ export async function searchWithEverything(query: string, maxResults: number = 5
 }
 
 // Search using Everything HTTP API (if Everything is running with HTTP server)
-export async function searchWithEverythingHTTP(query: string, maxResults: number = 50): Promise<IndexItem[]> {
+async function searchWithEverythingHTTP(query: string, maxResults: number = 50): Promise<IndexItem[]> {
     if (!query?.trim()) return [];
 
     try {

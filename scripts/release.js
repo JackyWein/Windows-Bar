@@ -84,7 +84,10 @@ function extractChangelog(version, debug = false) {
 
         // End-Bedingung: Wir haben den Start und finden die nächste Überschrift mit '#'
         // Bedingung: Muss mit # anfangen, darf nicht unsere Version sein, und muss etwas Text enthalten
-        if (startIndex !== -1 && line.startsWith('#') && !line.includes(version)) {
+        // Only a same-level version header (## [x.y.z]) ends the section — NOT the
+        // ###/#### subsection headers inside it (those were truncating release notes
+        // to a single line).
+        if (startIndex !== -1 && /^##\s/.test(line) && !line.includes(version)) {
             console.log(`🛑 ENDE der Sektion gefunden in Zeile ${i + 1}: "${line}"`);
             endIndex = i;
             break;
