@@ -1,6 +1,13 @@
 # Changelog
 Alle zukünftigen Änderungen an der Windows-Bar werden in dieser Datei dokumentiert.
 
+## [1.1.4] - 2026-06-28
+
+**🔧 Update-Funktion repariert**
+
+### 🐛 Behoben
+* **Kein Downgrade mehr beim Update:** Die In-App-Update-Funktion installierte unter Umständen eine *ältere* Version (z.B. 1.1.0 statt der neuesten) — weil sie eine alte, im Temp-Ordner liegengebliebene Installer-Datei wiederverwendete, ohne deren Version zu prüfen. Der Updater holt jetzt **immer zuerst die neueste Version von GitHub**, nutzt eine zwischengespeicherte Installer-Datei nur, wenn sie exakt zur neuesten Version passt, räumt veraltete Installer automatisch auf und aktualisiert ausschließlich **vorwärts**.
+
 ## [1.1.3] - 2026-06-28
 
 **🧰 Aufräum-, Stabilitäts- & Feature-Update — schneller, robuster, hübscher**

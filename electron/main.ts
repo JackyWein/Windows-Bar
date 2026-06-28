@@ -723,6 +723,34 @@ let installOnReady = false;
 let currentDownloadProgress: number | null = null;
 let isDownloading = false;
 let updateExePath: string | null = null;
+let updateVersion: string | null = null;
+
+// Semantic-ish version compare: is `a` strictly newer than `b`? (numeric parts, any length)
+function isNewerVersion(a: string, b: string): boolean {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
+
+// Remove leftover downloaded installers in temp that are NOT the version we want.
+// (A stale OLDER installer left here is what made the updater "update" backwards.)
+async function cleanStaleInstallers(keepVersion: string | null): Promise<void> {
+  try {
+    const tempDir = app.getPath('temp');
+    const keep = keepVersion ? `WindowsBar-${keepVersion}-Setup-NEU.exe` : null;
+    const files = await fs.readdir(tempDir);
+    for (const f of files) {
+      if (/^WindowsBar-.*-Setup-NEU\.exe$/i.test(f) && f !== keep) {
+        try { await fs.unlink(join(tempDir, f)); } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+}
 
 // Check for updates silently on startup using GitHub API (not electron-updater)
 async function checkForUpdates() {
@@ -738,46 +766,44 @@ async function checkForUpdates() {
     return;
   }
   
-  // Check if we already have an installer in temp from previous run
-  const tempDir = app.getPath('temp');
+  // IMPORTANT: resolve the latest version from GitHub FIRST. A previous version of
+  // this code reused ANY leftover `WindowsBar*.exe` in temp before checking GitHub,
+  // so a stale older installer made the app "update" to an OLDER version (e.g. 1.1.0).
   try {
-    const files = await fs.readdir(tempDir);
-    const existingInstaller = files.find(f => f.includes('WindowsBar') && f.endsWith('.exe'));
-    if (existingInstaller) {
-      console.log('[WindowsBar] Found existing installer in temp');
-      updateExePath = join(tempDir, existingInstaller);
+    const currentVersion = app.getVersion();
+    console.log('[WindowsBar] Silent update check. Current:', currentVersion);
+
+    const release: any = await fetchJSON('https://api.github.com/repos/JackyWein/Windows-Bar/releases/latest');
+    const latestVersion = (release.tag_name?.replace('v', '') || release.name || '').toString().trim();
+    if (!latestVersion) { console.log('[WindowsBar] No latest version from GitHub'); return; }
+
+    // Only ever move FORWARD.
+    if (!isNewerVersion(latestVersion, currentVersion)) {
+      console.log(`[WindowsBar] No update needed (latest ${latestVersion} <= current ${currentVersion})`);
+      await cleanStaleInstallers(null); // nothing newer — purge any leftover installers
+      return;
+    }
+
+    updateVersion = latestVersion;
+
+    // Reuse a temp installer ONLY if it is exactly the latest version; delete older ones.
+    await cleanStaleInstallers(latestVersion);
+    const wantedPath = join(app.getPath('temp'), `WindowsBar-${latestVersion}-Setup-NEU.exe`);
+    try {
+      await fs.access(wantedPath);
+      console.log('[WindowsBar] Reusing matching installer in temp:', wantedPath);
+      updateExePath = wantedPath;
       updateReady = true;
-      // Notify the UI
       if (mainWindow) {
         mainWindow.webContents.send('update-downloaded');
         mainWindow.webContents.send('update-ready');
       }
       return;
-    }
-  } catch (e) {
-    console.log('[WindowsBar] Could not check temp:', e);
-  }
+    } catch { /* not present — download it fresh */ }
 
-  try {
-    const currentVersion = app.getVersion();
-    console.log('[WindowsBar] Silent update check. Current:', currentVersion);
-    
-    const release: any = await fetchJSON('https://api.github.com/repos/JackyWein/Windows-Bar/releases/latest');
-    const latestVersion = release.tag_name?.replace('v', '') || release.name;
-    
-    // Compare versions
-    const curr = currentVersion.split('.').map(Number);
-    const latest = latestVersion.split('.').map(Number);
-    const needsUpdate = latest[0] > curr[0] || (latest[0] === curr[0] && latest[1] > curr[1]) || (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
-    
-    if (!needsUpdate) {
-      console.log('[WindowsBar] No update needed');
-      return;
-    }
-    
     const asset = release.assets?.find((a: any) => a.name?.endsWith('.exe') && a.name.includes('Setup'));
     if (asset) {
-      console.log('[WindowsBar] Background download started');
+      console.log('[WindowsBar] Background download started for', latestVersion);
       isDownloading = true;
       downloadAndInstall(asset.browser_download_url, latestVersion).catch(e => {
         console.error('[WindowsBar] Background DL error:', e);
@@ -2072,6 +2098,7 @@ async function downloadAndInstall(url: string, version: string): Promise<void> {
         writer.on('finish', () => {
           console.log('[WindowsBar] Download complete!');
           updateExePath = path;
+          updateVersion = version;
           updateReady = true;
           isDownloading = false;
           currentDownloadProgress = 100;
@@ -2133,11 +2160,9 @@ ipcMain.handle('check-for-updates', async () => {
     console.log(`[WindowsBar] Latest: ${latestVersion}, Current: ${currentVersion}`);
     
     // Compare versions properly
-    const curr = currentVersion.split('.').map(Number);
-    const latest = latestVersion.split('.').map(Number);
-    const needsUpdate = latest[0] > curr[0] || (latest[0] === curr[0] && latest[1] > curr[1]) || (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
+    const needsUpdate = isNewerVersion(latestVersion, currentVersion);
     
-    console.log(`[WindowsBar] Needs update: ${needsUpdate}, curr=${curr}, latest=${latest}`);
+    console.log(`[WindowsBar] Needs update: ${needsUpdate}, curr=${currentVersion}, latest=${latestVersion}`);
     
     if (needsUpdate) {
       const asset = release.assets?.find((a: any) => a.name?.endsWith('.exe') && a.name.includes('Setup'));
@@ -2198,29 +2223,27 @@ ipcMain.on('install-update', async () => {
       console.error('[WindowsBar] Error launching auto-installer:', e);
     }
   } else {
-    // Fallback: If we don't have the path exactly, look in temp dir
+    // Fallback: only launch the installer for the version we actually resolved —
+    // never a random older leftover (that caused downgrades).
     const tempDir = app.getPath('temp');
     try {
-      const files = await fs.readdir(tempDir);
-      console.log('[WindowsBar] Files in temp:', files.filter(f => f.includes('WindowsBar')));
-      
-      const installer = files.find(f => f.includes('WindowsBar') && f.endsWith('.exe'));
-      
-      if (installer) {
-        const exePath = join(tempDir, installer);
+      const wanted = updateVersion ? join(tempDir, `WindowsBar-${updateVersion}-Setup-NEU.exe`) : null;
+      let exePath: string | null = null;
+      if (wanted) {
+        try { await fs.access(wanted); exePath = wanted; } catch { /* not there */ }
+      }
+      if (exePath) {
         console.log(`[WindowsBar] Installer (fallback): ${exePath}`);
-        
         const { spawn } = require('child_process');
         const subprocess = spawn(exePath, ['/S', '/NCRC', '--force-run'], {
           detached: true,
           stdio: 'ignore'
         });
         subprocess.unref();
-        
         console.log('[WindowsBar] Installer launched, quitting app...');
         app.quit();
       } else {
-        console.log('[WindowsBar] No installer found');
+        console.log('[WindowsBar] No matching installer found; opening temp folder');
         shell.openPath(tempDir);
       }
     } catch (e) {
